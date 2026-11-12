@@ -1,4 +1,4 @@
-/* Procreate Web 0.2.0 — build 2026-11-12T09:46:40.345Z — ES5 estricto */
+/* Procreate Web 0.2.0 — build 2026-11-12T09:48:09.432Z — ES5 estricto */
 
 /* ---- 00-core.js ---- */
 
@@ -3839,8 +3839,10 @@
   function historyEntryFits(s, entry) {
     if (!entry || !entry.rect || !entry.before || !entry.after) { return false; }
     var r = entry.rect;
+    /* putImageData recorta lo que sobresale; solo se rechazan rectángulos
+       vacíos o con origen fuera del lienzo. */
     return r.x >= 0 && r.y >= 0 && r.w > 0 && r.h > 0 &&
-      r.x + r.w <= s.doc.width && r.y + r.h <= s.doc.height;
+      r.x < s.doc.width && r.y < s.doc.height;
   }
 
   function applyHistoryEntry(s, entry, data) {

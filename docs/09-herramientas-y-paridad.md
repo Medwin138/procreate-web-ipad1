@@ -189,7 +189,7 @@ fondo cambió a `#f2f2f2` y el nombre se conservó.
 
 ## 9. Pruebas y evidencias
 
-- `npm run check`: build correcto de 238,0 KB y 7993 líneas fuente, 9 módulos ES5,
+- `npm run check`: build correcto de 238,1 KB y 7995 líneas fuente, 9 módulos ES5,
   15/15 pruebas de Node y comprobación de ids sin errores.
 - Pruebas interactivas en Chromium: galería, creación de lienzo, capas, 27 pinceles,
   borrador, difuminar, ColorDrop, selección con añadir/restar, transformación, ajustes,
