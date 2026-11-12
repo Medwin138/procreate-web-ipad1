@@ -10,10 +10,11 @@ ejecutable en Safari 9.3.5 sobre iPad mini 1 (A5, 512 MB RAM, 1024 × 768).
 > La galería, el estudio, los paneles, el almacenamiento, la exportación y el diagnóstico
 > funcionan en Chromium de escritorio. También están implementados ColorDrop, selección
 > (con añadir/restar), transformación, ajustes, bloqueo alfa, configuración del lienzo y
-> una biblioteca propia de 27 pinceles en las 11 categorías nativas. Deshacer y rehacer
-> funcionan por gesto (2 y 3 dedos) y por botón de barra o Quick Menu, con tolerancia a
-> temblor y `touchcancel`. El motor de trazo sigue siendo **provisional** (Fase 3) y la
-> fidelidad visual **no se ha comparado contra Procreate 3.1**. Ver
+> una biblioteca propia de 29 pinceles en las 11 categorías nativas. El motor de trazo
+> incorpora estabilización, StreamLine, filtro de movimiento, QuickShape, curvas Bézier
+> editables y corrección de forma a petición. Deshacer y rehacer funcionan por gesto
+> (2 y 3 dedos) y por botón de barra o Quick Menu, con tolerancia a temblor y
+> `touchcancel`. La fidelidad visual **no se ha comparado contra Procreate 3.1**. Ver
 > [`docs/08-fase2-shell.md`](docs/08-fase2-shell.md) y
 > [`docs/09-herramientas-y-paridad.md`](docs/09-herramientas-y-paridad.md).
 
@@ -60,7 +61,7 @@ y el plan para obtener evidencia de comportamiento en el dispositivo del usuario
 | `docs/06-plan-adaptacion.md` | Fases, criterios de aceptación y validación en iPad real |
 | `docs/07-aprobacion-y-decisiones.md` | Decisiones pendientes antes de programar |
 | `docs/08-fase2-shell.md` | Alcance real del shell, pruebas ejecutadas y límites |
-| `docs/09-herramientas-y-paridad.md` | ColorDrop, selección, transformación, ajustes, bloqueo alfa, lienzo y paridad real con 3.1 |
+| `docs/09-herramientas-y-paridad.md` | ColorDrop, selección, transformación, ajustes, bloqueo alfa, lienzo, asistencia de trazos y paridad real con 3.1 |
 
 ## Restricciones del proyecto
 
@@ -114,4 +115,5 @@ propias y no se distribuye ningún binario de la app original.
 2. Corregir lo que falle en Safari 9 antes de ampliar el motor.
 3. Decidir el orden de los pendientes de paridad: warp/licuar, recorte y redimensionado
    del lienzo, transformación limitada a la selección, o validación en el dispositivo.
-4. Aprobar el alcance de la Fase 3 (motor de trazo propio).
+4. Validar en el iPad los filtros de trazo, QuickShape y el editor Bézier, y calibrar sus
+   umbrales y radios táctiles con el hardware real.

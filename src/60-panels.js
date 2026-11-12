@@ -181,6 +181,8 @@
     renderLayers();
     syncColor();
     if (ui.isPanelOpen('panel-brushes')) { renderBrushes(); }
+    if (ui.isPanelOpen('panel-brush-settings')) { renderBrushSettings(); }
+    syncQuickShape();
   }
 
   /* ---------------------------------------------------------------- color */
@@ -451,7 +453,7 @@
         item.appendChild(canvasEl);
         item.appendChild(dom.create('span', '', b.name));
         grid.appendChild(item);
-        PCW.paint.preview(canvasEl, b);
+        PCW.paint.preview(canvasEl, model.resolveBrush(b.id));
       }(brush));
     }
   }
@@ -468,6 +470,116 @@
     }
     PCW.studio.setTool('brush');
     openBrushes();
+  }
+
+  function renderBrushSettings() {
+    var body = dom.id('brush-settings-body');
+    var title = dom.id('brush-settings-title');
+    var s = studioState();
+    if (!body || !s) { return; }
+    dom.empty(body);
+    if (title) { title.textContent = 'Ajustar: ' + s.brush.name; }
+    var list = PCW.studio.getBrushSettings();
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      (function (item) {
+        var label = dom.create('label', 'row-label');
+        label.appendChild(document.createTextNode(item.label + ' '));
+        var out = dom.create('span', '', String(item.value) + item.unit);
+        out.setAttribute('data-brush-value', item.key);
+        label.appendChild(out);
+        var input = dom.create('input', 'range');
+        input.type = 'range';
+        input.min = String(item.min);
+        input.max = String(item.max);
+        input.value = String(item.value);
+        input.setAttribute('data-brush-setting', item.key);
+        dom.on(input, 'input', function () {
+          var v = parseInt(input.value, 10);
+          out.textContent = String(v) + item.unit;
+          PCW.studio.setBrushSetting(item.key, v);
+        });
+        label.appendChild(input);
+        body.appendChild(label);
+      }(list[i]));
+    }
+
+    var assist = dom.create('div', 'assist-toggles');
+    var qsRow = dom.create('label', 'assist-row');
+    var qs = dom.create('input');
+    qs.type = 'checkbox';
+    qs.id = 'brush-quickshape';
+    qs.checked = !!s.quickShape;
+    qsRow.appendChild(qs);
+    qsRow.appendChild(document.createTextNode(' QuickShape al mantener el dedo'));
+    assist.appendChild(qsRow);
+
+    var curveRow = dom.create('label', 'assist-row');
+    var curve = dom.create('input');
+    curve.type = 'checkbox';
+    curve.id = 'brush-curve-recognition';
+    curve.checked = !!s.curveRecognition;
+    curveRow.appendChild(curve);
+    curveRow.appendChild(document.createTextNode(' Reconocimiento de curvas'));
+    assist.appendChild(curveRow);
+    body.appendChild(assist);
+
+    dom.on(qs, 'change', function () {
+      PCW.studio.setQuickShape(qs.checked);
+    });
+    dom.on(curve, 'change', function () {
+      PCW.studio.setCurveRecognition(curve.checked);
+    });
+  }
+
+  function syncQuickShape() {
+    var s = studioState();
+    if (!s) { return; }
+    var qs = dom.id('brush-quickshape');
+    if (qs) { qs.checked = !!s.quickShape; }
+    var curve = dom.id('brush-curve-recognition');
+    if (curve) { curve.checked = !!s.curveRecognition; }
+    var qsLabel = dom.id('btn-quickshape');
+    if (qsLabel) {
+      qsLabel.textContent = 'QuickShape: ' + (s.quickShape ? 'Activado' : 'Desactivado');
+    }
+    var curveLabel = dom.id('btn-curve-recognition');
+    if (curveLabel) {
+      curveLabel.textContent = 'Reconocer curvas: ' +
+        (s.curveRecognition ? 'Activado' : 'Desactivado');
+    }
+  }
+
+  function openCurveEdit() {
+    ui.openPanel('panel-curve-edit');
+  }
+
+  function closeCurveEdit() {
+    ui.closePanel('panel-curve-edit');
+  }
+
+  function openBrushSettings() {
+    var s = studioState();
+    if (!s) { return; }
+    ui.openPanel('panel-brush-settings');
+    renderBrushSettings();
+  }
+
+  function syncBrushSettings() {
+    if (!ui.isPanelOpen('panel-brush-settings')) { return; }
+    var s = studioState();
+    if (!s) { return; }
+    var list = PCW.studio.getBrushSettings();
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      var key = list[i].key;
+      var input = dom.qs('[data-brush-setting="' + key + '"]');
+      var out = dom.qs('[data-brush-value="' + key + '"]');
+      if (input) { input.value = String(list[i].value); }
+      if (out) { out.textContent = String(list[i].value) + list[i].unit; }
+    }
+    var title = dom.id('brush-settings-title');
+    if (title) { title.textContent = 'Ajustar: ' + s.brush.name; }
   }
 
   /* -------------------------------------------------------------- acciones */
@@ -560,6 +672,9 @@
       brightness: 'adj-brightness',
       contrast: 'adj-contrast',
       saturation: 'adj-saturation',
+      hue: 'adj-hue',
+      temperature: 'adj-temperature',
+      sharpen: 'adj-sharpen',
       blur: 'adj-blur',
       noise: 'adj-noise'
     };
@@ -624,6 +739,41 @@
     else if (action === 'fill-layer') { PCW.studio.fillLayer(); }
     else if (action === 'fill-selection') { PCW.studio.fillSelection(); }
     else if (action === 'clear-layer') { PCW.studio.clearActiveLayer(); }
+    else if (action === 'merge-down') {
+      ui.closeAll();
+      if (PCW.studio.mergeDown()) { ui.toast('Capa combinada'); }
+      return;
+    }
+    else if (action === 'merge-visible') {
+      ui.closeAll();
+      if (PCW.studio.mergeVisible()) { ui.toast('Capas visibles combinadas'); }
+      return;
+    }
+    else if (action === 'crop-selection') {
+      ui.closeAll();
+      PCW.studio.cropToSelection();
+      return;
+    }
+    else if (action === 'correct-shape') {
+      ui.closeAll();
+      PCW.studio.correctLastShape();
+      return;
+    }
+    else if (action === 'edit-curve') {
+      ui.closeAll();
+      PCW.studio.startCurveEdit();
+      return;
+    }
+    else if (action === 'toggle-quickshape') {
+      PCW.studio.setQuickShape(!PCW.studio.getQuickShape());
+      syncQuickShape();
+      return;
+    }
+    else if (action === 'toggle-curve') {
+      PCW.studio.setCurveRecognition(!PCW.studio.getCurveRecognition());
+      syncQuickShape();
+      return;
+    }
     else if (action === 'canvas-settings') {
       ui.closeAll();
       PCW.studio.openCanvasSettings();
@@ -709,6 +859,7 @@
 
     dom.on(dom.id('btn-brush'), 'click', toggleBrushes);
     dom.on(dom.id('btn-actions'), 'click', function () {
+      syncQuickShape();
       ui.togglePanel('popover-actions');
     });
     dom.on(dom.id('btn-adjustments'), 'click', function () {
@@ -823,8 +974,29 @@
       var id = item.getAttribute('data-brush');
       PCW.studio.setBrush(id, false);
       ui.closePanel('panel-brushes');
-      ui.toast('Pincel: ' + model.getBrush(id).name);
+      ui.toast('Pincel: ' + model.resolveBrush(id).name);
     });
+    var brushStudio = dom.id('btn-brush-studio');
+    if (brushStudio) { dom.on(brushStudio, 'click', openBrushSettings); }
+    var brushReset = dom.id('btn-brush-reset');
+    if (brushReset) {
+      dom.on(brushReset, 'click', function () {
+        PCW.studio.resetBrushSettings();
+        renderBrushSettings();
+      });
+    }
+    var brushDone = dom.id('btn-brush-done');
+    if (brushDone) {
+      dom.on(brushDone, 'click', function () { ui.closePanel('panel-brush-settings'); });
+    }
+    var curveApply = dom.id('btn-curve-apply');
+    if (curveApply) {
+      dom.on(curveApply, 'click', function () { PCW.studio.applyCurveEdit(); });
+    }
+    var curveCancel = dom.id('btn-curve-cancel');
+    if (curveCancel) {
+      dom.on(curveCancel, 'click', function () { PCW.studio.cancelCurveEdit(); });
+    }
 
     dom.on(dom.id('quick-menu'), 'click', function (ev) {
       var item = findUp(ev.target, 'data-quick');
@@ -832,6 +1004,12 @@
     });
 
     dom.on(dom.id('popover-actions'), 'click', function (ev) {
+      var sym = findUp(ev.target, 'data-symmetry');
+      if (sym) {
+        PCW.studio.setSymmetry(sym.getAttribute('data-symmetry'));
+        ui.closeAll();
+        return;
+      }
       var item = findUp(ev.target, 'data-action');
       if (item) { doAction(item.getAttribute('data-action')); }
     });
@@ -859,7 +1037,8 @@
       });
     }
 
-    var adjSliders = ['brightness', 'contrast', 'saturation', 'blur', 'noise'];
+    var adjSliders = ['brightness', 'contrast', 'saturation', 'hue',
+      'temperature', 'sharpen', 'blur', 'noise'];
     for (i = 0; i < adjSliders.length; i += 1) {
       (function (key) {
         var el = dom.id('adj-' + key);
@@ -960,7 +1139,11 @@
     openLayers: openLayers,
     openColor: openColor,
     openBrushes: openBrushes,
-    renderBrushes: renderBrushes
+    renderBrushes: renderBrushes,
+    syncQuickShape: syncQuickShape,
+    openCurveEdit: openCurveEdit,
+    closeCurveEdit: closeCurveEdit,
+    syncBrushSettings: syncBrushSettings
   };
 
 })(typeof window !== 'undefined' ? window : this);

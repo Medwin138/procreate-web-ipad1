@@ -258,6 +258,14 @@
     if (id === 'panel-adjustments' && PCW.studio && PCW.studio.cancelAdjust) {
       PCW.studio.cancelAdjust();
     }
+    /* Cerrar el panel de curva sin Aplicar equivale a cancelar la edición:
+       se restaura el trazo original en lugar de dejarlo interceptando el
+       lienzo sin controles visibles. */
+    if (id === 'panel-curve-edit' && PCW.studio && PCW.studio.hasCurveEdit &&
+        PCW.studio.hasCurveEdit()) {
+      PCW.studio.cancelCurveEdit();
+      return;
+    }
     dom.hide(dom.id(id));
   }
 
@@ -277,6 +285,9 @@
   }
 
   function closeAll() {
+    if (PCW.studio && PCW.studio.hasCurveEdit && PCW.studio.hasCurveEdit()) {
+      PCW.studio.cancelCurveEdit();
+    }
     var list = panelEls();
     var i;
     for (i = 0; i < list.length; i += 1) {

@@ -475,6 +475,87 @@
     });
   }
 
+  /* Importa un respaldo .pcw. Siempre crea un proyecto nuevo para no
+     sobrescribir el original; las capas se validan antes de escribir. */
+  var IMPORT_MAX_BYTES = 80 * 1024 * 1024;
+
+  function importProjectFile(file) {
+    if (!file) { return; }
+    if (file.size > IMPORT_MAX_BYTES) {
+      ui.toast('El archivo supera los 80 MB; no se puede importar', 3200);
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function () {
+      ui.toast('No se pudo leer el archivo', 3000);
+    };
+    reader.onload = function () {
+      var payload;
+      try {
+        payload = JSON.parse(String(reader.result || ''));
+      } catch (e) {
+        ui.toast('El archivo no es un .pcw válido', 3200);
+        return;
+      }
+      var record = payload && (payload.doc || payload.record) ? (payload.doc || payload.record) : payload;
+      if (!record || !record.layers) {
+        ui.toast('El respaldo no contiene un proyecto', 3200);
+        return;
+      }
+      var doc;
+      try {
+        doc = model.fromRecord(record);
+      } catch (e2) {
+        ui.toast('Proyecto inválido: ' + e2.message, 3600);
+        return;
+      }
+      var budget = model.budgetFor(doc.width, doc.height);
+      if (budget.overBudget || doc.layers.length > budget.maxLayers) {
+        ui.toast('El proyecto no cabe en el presupuesto de 40 MB', 3600);
+        return;
+      }
+      doc.id = util.uid('doc');
+      doc.createdAt = Date.now();
+      doc.updatedAt = Date.now();
+      var layerData = {};
+      var source = payload.layers || [];
+      var i;
+      if (source.length) {
+        for (i = 0; i < source.length; i += 1) {
+          if (source[i] && source[i].id && typeof source[i].data === 'string' &&
+              source[i].data.indexOf('data:image/') === 0) {
+            layerData[source[i].id] = source[i].data;
+          }
+        }
+      } else if (payload.layerData) {
+        for (i in payload.layerData) {
+          if (Object.prototype.hasOwnProperty.call(payload.layerData, i) &&
+              typeof payload.layerData[i] === 'string') {
+            layerData[i] = payload.layerData[i];
+          }
+        }
+      }
+      var missing = 0;
+      for (i = 0; i < doc.layers.length; i += 1) {
+        if (!layerData[doc.layers[i].id]) { missing += 1; }
+      }
+      if (missing > 0) {
+        ui.toast('Aviso: ' + missing + ' capa(s) llegarán vacías', 3600);
+      }
+      storage.saveProject(model.toRecord(doc, record.thumb || ''), {
+        layerData: layerData
+      }, function (err) {
+        if (err) {
+          ui.toast('No se pudo importar: ' + err.message, 3600);
+          return;
+        }
+        refresh();
+        ui.toast('Proyecto importado');
+      });
+    };
+    reader.readAsText(file);
+  }
+
   function projectMenu(projectId) {
     var record = findProject(projectId);
     if (!record) { return; }
@@ -546,6 +627,15 @@
     dom.on(dom.id('btn-diag'), 'click', function () {
       PCW.diag.show();
     });
+
+    var importInput = dom.id('file-project');
+    if (importInput) {
+      dom.on(importInput, 'change', function () {
+        var file = importInput.files && importInput.files[0];
+        if (file) { importProjectFile(file); }
+        importInput.value = '';
+      });
+    }
 
     dom.on(dom.id('gallery-grid'), 'click', function (ev) {
       var openEl = findUp(ev.target, 'data-open');

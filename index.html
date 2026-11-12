@@ -19,6 +19,7 @@
       <span id="gallery-count" class="subtle"></span>
     </div>
     <div class="gallery-actions">
+      <label class="text-btn" for="file-project">Importar .pcw</label>
       <button id="btn-diag" class="text-btn" type="button">Diagnóstico</button>
       <button id="btn-new-project" class="icon-btn primary" type="button" aria-label="Nuevo lienzo">
         <svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
@@ -27,6 +28,8 @@
   </header>
 
   <div id="gallery-storage-note" class="storage-note is-hidden"></div>
+
+  <input id="file-project" class="file-input-hidden" type="file" accept=".pcw,application/json">
 
   <div class="gallery-body">
     <div id="gallery-empty" class="gallery-empty is-hidden">
@@ -206,15 +209,51 @@
   <div id="panel-brushes" class="overlay-panel is-hidden">
     <div class="panel-head wide">
       <span>Biblioteca de pinceles</span>
-      <button class="icon-btn small panel-close" type="button" data-close="panel-brushes" aria-label="Cerrar">
-        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+      <div class="panel-head-actions">
+        <button id="btn-brush-studio" class="text-btn" type="button">Ajustar pincel</button>
+        <button class="icon-btn small panel-close" type="button" data-close="panel-brushes" aria-label="Cerrar">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
     </div>
     <div class="brush-layout">
       <div id="brush-sets" class="brush-sets"></div>
       <div id="brush-grid" class="brush-grid"></div>
     </div>
-    <p class="overlay-note">Pinceles propios de esta adaptación. No se usan recursos de Procreate. El motor de la Fase 3 sustituirá la vista previa provisional.</p>
+    <p class="overlay-note">Pinceles propios de esta adaptación. No se usan recursos de Procreate. Los ajustes de cada pincel se guardan en este dispositivo.</p>
+  </div>
+
+  <!-- Estudio de pincel -->
+  <div id="panel-brush-settings" class="overlay-panel narrow is-hidden">
+    <div class="panel-head wide">
+      <span id="brush-settings-title">Ajustar pincel</span>
+      <button class="icon-btn small panel-close" type="button" data-close="panel-brush-settings" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div id="brush-settings-body" class="adjust-body"></div>
+    <div class="panel-foot right">
+      <button id="btn-brush-reset" class="text-btn" type="button">Restablecer</button>
+      <button id="btn-brush-done" class="text-btn strong" type="button">Listo</button>
+    </div>
+  </div>
+
+  <!-- Edición de curva Bézier -->
+  <div id="panel-curve-edit" class="overlay-panel narrow is-hidden">
+    <div class="panel-head wide">
+      <span>Editar curva</span>
+    </div>
+    <div class="adjust-body">
+      <p class="form-note">Arrastra las anclas blancas para mover la curva y los puntos azules para ajustar sus manejadores. Se aplicará con el pincel y el color actuales.</p>
+      <div class="curve-legend">
+        <span><i class="curve-dot anchor"></i> Ancla</span>
+        <span><i class="curve-dot handle"></i> Manejador</span>
+      </div>
+    </div>
+    <div class="panel-foot right">
+      <button id="btn-curve-cancel" class="text-btn" type="button">Cancelar</button>
+      <button id="btn-curve-apply" class="text-btn strong" type="button">Aplicar</button>
+    </div>
   </div>
 
   <!-- Acciones -->
@@ -228,6 +267,21 @@
     <button class="menu-item" type="button" data-action="fill-layer">Rellenar capa</button>
     <button class="menu-item" type="button" data-action="fill-selection">Rellenar selección</button>
     <button class="menu-item" type="button" data-action="clear-layer">Vaciar capa</button>
+    <button class="menu-item" type="button" data-action="merge-down">Combinar capa hacia abajo</button>
+    <button class="menu-item" type="button" data-action="merge-visible">Combinar capas visibles</button>
+    <button class="menu-item" type="button" data-action="crop-selection">Recortar a selección</button>
+    <div class="menu-sep"></div>
+    <div class="popover-title">Guía de simetría</div>
+    <button class="menu-item" type="button" data-symmetry="off">Sin simetría</button>
+    <button class="menu-item" type="button" data-symmetry="vertical">Simetría vertical</button>
+    <button class="menu-item" type="button" data-symmetry="horizontal">Simetría horizontal</button>
+    <button class="menu-item" type="button" data-symmetry="quad">Cuadrícula (4 ejes)</button>
+    <div class="menu-sep"></div>
+    <div class="popover-title">Asistencia del trazo</div>
+    <button class="menu-item" type="button" data-action="correct-shape">Corregir forma del último trazo</button>
+    <button class="menu-item" type="button" data-action="edit-curve">Editar curva del último trazo</button>
+    <button id="btn-quickshape" class="menu-item" type="button" data-action="toggle-quickshape">QuickShape: Activado</button>
+    <button id="btn-curve-recognition" class="menu-item" type="button" data-action="toggle-curve">Reconocer curvas: Activado</button>
     <div class="menu-sep"></div>
     <button class="menu-item" type="button" data-action="export-png">Compartir PNG</button>
     <button class="menu-item" type="button" data-action="export-jpeg">Compartir JPEG</button>
@@ -255,6 +309,15 @@
       </label>
       <label class="row-label">Saturación <span id="adj-saturation-value">0</span>
         <input id="adj-saturation" class="range" type="range" min="-100" max="100" value="0">
+      </label>
+      <label class="row-label">Tono <span id="adj-hue-value">0</span>
+        <input id="adj-hue" class="range" type="range" min="-180" max="180" value="0">
+      </label>
+      <label class="row-label">Temperatura <span id="adj-temperature-value">0</span>
+        <input id="adj-temperature" class="range" type="range" min="-100" max="100" value="0">
+      </label>
+      <label class="row-label">Enfoque <span id="adj-sharpen-value">0</span>
+        <input id="adj-sharpen" class="range" type="range" min="0" max="100" value="0">
       </label>
       <label class="row-label">Desenfoque <span id="adj-blur-value">0</span>
         <input id="adj-blur" class="range" type="range" min="0" max="20" value="0">
@@ -287,6 +350,7 @@
     <button class="menu-item select-op is-active" type="button" data-select-op="new">Nueva selección</button>
     <button class="menu-item select-op" type="button" data-select-op="add">Añadir a la selección</button>
     <button class="menu-item select-op" type="button" data-select-op="subtract">Restar de la selección</button>
+    <button class="menu-item select-op" type="button" data-select-op="intersect">Intersección</button>
     <div class="menu-sep"></div>
     <button class="menu-item" type="button" data-selection-action="invert">Invertir selección</button>
     <button class="menu-item" type="button" data-selection-action="duplicate">Duplicar a capa</button>

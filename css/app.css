@@ -399,6 +399,17 @@ svg {
   background: #333338;
 }
 
+label.text-btn {
+  display: -webkit-inline-box;
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  line-height: 34px;
+  cursor: pointer;
+}
+
 .text-btn.strong {
   background: #2f6fed;
   color: #fff;
@@ -1115,6 +1126,26 @@ svg {
   overflow: hidden;
 }
 
+.overlay-panel.narrow {
+  width: 440px;
+  margin-left: -220px;
+}
+
+.panel-head-actions {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.panel-head-actions .text-btn {
+  margin-right: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .brush-layout {
   -webkit-box-flex: 1;
   -webkit-flex: 1 1 auto;
@@ -1794,6 +1825,81 @@ svg {
     width: -webkit-calc(50% - 10px);
     width: calc(50% - 10px);
   }
+}
+
+/* Asistencia de trazo: QuickShape y reconocimiento de curvas */
+.assist-toggles {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #2d2d33;
+}
+
+.assist-row {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 10px;
+  color: #c8c8d0;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.assist-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0 8px 0 0;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid #4a4a55;
+  border-radius: 5px;
+  background: #1c1c1f;
+}
+
+.assist-row input[type="checkbox"]:checked {
+  border-color: #4d7ff0;
+  background-color: #2f6fed;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' d='M3.6 8.4l2.9 2.9 5.9-6.8'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
+.curve-legend {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  color: #a4a4ac;
+  font-size: 11px;
+}
+
+.curve-legend span {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-box-align: center;
+  -webkit-align-items: center;
+  align-items: center;
+  margin: 0 16px 6px 0;
+}
+
+.curve-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #2f6fed;
+}
+
+.curve-dot.anchor {
+  border: 2px solid #2f6fed;
+  background: #ffffff;
 }
 
 @media (max-width: 480px) {

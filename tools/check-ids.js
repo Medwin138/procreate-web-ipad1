@@ -12,7 +12,13 @@ var DYNAMIC = {
   'new-budget-note': true,
   'new-name': true,
   'canvas-name': true,
-  'canvas-bg': true
+  'canvas-bg': true,
+  'canvas-width': true,
+  'canvas-height': true,
+  'canvas-anchor': true,
+  'canvas-scale': true,
+  'brush-quickshape': true,
+  'brush-curve-recognition': true
 };
 
 var html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');

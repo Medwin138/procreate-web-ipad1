@@ -1,4 +1,4 @@
-/* Procreate Web 0.2.0 — build 2026-11-12T09:48:09.432Z — ES5 estricto */
+/* Procreate Web 0.2.0 — build 2026-11-12T12:29:16.261Z — ES5 estricto */
 
 /* ---- 00-core.js ---- */
 
@@ -1345,9 +1345,10 @@
 
   var BRUSHES = [
     /* Boceto */
-    { id: 'pencil-6b', name: 'Lápiz 6B', set: 'Boceto', category: 'pencil',
-      size: 9, opacity: 0.92, hardness: 0.55, spacing: 0.10,
-      jitter: 0.25, scatter: 0.12, taper: 0.65, grain: 0.25 },
+    { id: 'pencil-6b', name: '6B Pencil', set: 'Boceto', category: 'pencil',
+      size: 9, opacity: 0.9, hardness: 0.5, spacing: 0.10,
+      jitter: 0.25, scatter: 0.12, taper: 0.7, grain: 0.4,
+      speed: 0.35, streamline: 0.25 },
     { id: 'pencil-hb', name: 'Lápiz HB', set: 'Boceto', category: 'pencil',
       size: 5, opacity: 0.95, hardness: 0.72, spacing: 0.09,
       jitter: 0.15, scatter: 0.06, taper: 0.55, grain: 0.18 },
@@ -1365,6 +1366,10 @@
     { id: 'ink-brush', name: 'Pincel de tinta', set: 'Entintado', category: 'ink',
       size: 21, opacity: 0.98, hardness: 0.9, spacing: 0.05,
       jitter: 0.08, scatter: 0.03, taper: 0.8, grain: 0.05 },
+    { id: 'dry-ink', name: 'Dry Ink', set: 'Entintado', category: 'ink',
+      size: 26, opacity: 0.9, hardness: 0.84, spacing: 0.045,
+      jitter: 0.06, scatter: 0.03, taper: 0.75, grain: 0.32,
+      streak: 0.75, speed: 0.55, streamline: 0.35 },
 
     /* Dibujo */
     { id: 'colored-pencil', name: 'Lápiz de color', set: 'Dibujo', category: 'drawing',
@@ -1392,6 +1397,10 @@
     { id: 'dry-brush', name: 'Pincel seco', set: 'Artístico', category: 'artistic',
       size: 34, opacity: 0.68, hardness: 0.7, spacing: 0.16,
       jitter: 0.35, scatter: 0.2, taper: 0.3, grain: 0.7 },
+    { id: 'shale-brush', name: 'Shale Brush', set: 'Artístico', category: 'charcoal',
+      size: 40, opacity: 0.62, hardness: 0.22, spacing: 0.09,
+      jitter: 0.55, scatter: 0.4, taper: 0.3, grain: 0.85,
+      streak: 0.35, speed: 0.25, streamline: 0.12 },
     { id: 'palette-knife', name: 'Espátula', set: 'Artístico', category: 'artistic',
       size: 28, opacity: 0.9, hardness: 0.75, spacing: 0.06,
       jitter: 0.1, scatter: 0.04, taper: 0.2, grain: 0.2 },
@@ -1539,7 +1548,8 @@
       color: opts.color || '#1c1c1e',
       recentColors: (opts.recentColors || []).slice(0, 16),
       palette: (opts.palette || PALETTE).slice(0),
-      historyLimit: opts.historyLimit || 0
+      historyLimit: opts.historyLimit || 0,
+      symmetry: opts.symmetry || 'off'
     };
     return doc;
   }
@@ -1623,12 +1633,113 @@
     return layer;
   }
 
+  /* Ajustes de pincel propios del usuario. Se guardan en el navegador y se
+     aplican sobre una copia: los valores originales de la biblioteca no se
+     modifican, de modo que «Restablecer» siempre funciona. */
+  var BRUSH_STORE_KEY = 'pcw.brushes.v1';
+  var BRUSH_OVERRIDE_KEYS = {
+    size: true, opacity: true, hardness: true, spacing: true,
+    jitter: true, scatter: true, taper: true, grain: true,
+    streak: true, speed: true, streamline: true, stabilize: true,
+    motionFilter: true, shapeCorrection: true, pressure: true
+  };
+  var BRUSH_EXTRA_DEFAULTS = {
+    stabilize: 0.18,
+    streamline: 0.2,
+    motionFilter: 0.2,
+    shapeCorrection: 1,
+    pressure: 0.35
+  };
+  var brushOverrides = null;
+
+  function readBrushStore() {
+    if (brushOverrides) { return brushOverrides; }
+    brushOverrides = {};
+    try {
+      if (root.localStorage) {
+        var raw = root.localStorage.getItem(BRUSH_STORE_KEY);
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') { brushOverrides = parsed; }
+        }
+      }
+    } catch (e) { /* almacenamiento no disponible */ }
+    return brushOverrides;
+  }
+
+  function persistBrushStore() {
+    try {
+      if (root.localStorage) {
+        root.localStorage.setItem(BRUSH_STORE_KEY, JSON.stringify(brushOverrides || {}));
+      }
+    } catch (e) { /* almacenamiento no disponible */ }
+  }
+
   function getBrush(brushId) {
     var i;
     for (i = 0; i < BRUSHES.length; i += 1) {
       if (BRUSHES[i].id === brushId) { return BRUSHES[i]; }
     }
     return BRUSHES[0];
+  }
+
+  function resolveBrush(brushId) {
+    var base = getBrush(brushId);
+    var out = {};
+    var key;
+    for (key in base) {
+      if (Object.prototype.hasOwnProperty.call(base, key)) { out[key] = base[key]; }
+    }
+    for (key in BRUSH_EXTRA_DEFAULTS) {
+      if (Object.prototype.hasOwnProperty.call(BRUSH_EXTRA_DEFAULTS, key) &&
+          typeof out[key] !== 'number') {
+        out[key] = BRUSH_EXTRA_DEFAULTS[key];
+      }
+    }
+    var store = readBrushStore();
+    var override = store[base.id];
+    if (override) {
+      for (key in override) {
+        if (Object.prototype.hasOwnProperty.call(override, key) &&
+            BRUSH_OVERRIDE_KEYS[key]) {
+          out[key] = override[key];
+        }
+      }
+    }
+    out.id = base.id;
+    out.name = base.name;
+    out.set = base.set;
+    out.category = base.category;
+    return out;
+  }
+
+  function setBrushOverride(brushId, key, value) {
+    if (!BRUSH_OVERRIDE_KEYS[key]) { return false; }
+    var base = getBrush(brushId);
+    var store = readBrushStore();
+    if (!store[base.id]) { store[base.id] = {}; }
+    store[base.id][key] = value;
+    persistBrushStore();
+    return true;
+  }
+
+  function clearBrushOverride(brushId) {
+    var base = getBrush(brushId);
+    var store = readBrushStore();
+    delete store[base.id];
+    persistBrushStore();
+  }
+
+  function brushOverride(brushId) {
+    var store = readBrushStore();
+    var base = getBrush(brushId);
+    var src = store[base.id] || {};
+    var out = {};
+    var key;
+    for (key in src) {
+      if (Object.prototype.hasOwnProperty.call(src, key)) { out[key] = src[key]; }
+    }
+    return out;
   }
 
   function brushSets() {
@@ -1680,6 +1791,7 @@
       color: doc.color,
       recentColors: (doc.recentColors || []).slice(0, 16),
       palette: (doc.palette || PALETTE).slice(0),
+      symmetry: doc.symmetry || 'off',
       thumb: thumb || doc.thumb || ''
     };
   }
@@ -1730,6 +1842,9 @@
         flipX: !!record.view.flipX
       };
     }
+    var symmetry = record.symmetry;
+    doc.symmetry = (symmetry === 'vertical' || symmetry === 'horizontal' ||
+      symmetry === 'quad') ? symmetry : 'off';
     doc.thumb = record.thumb || '';
     return doc;
   }
@@ -1737,6 +1852,423 @@
   function estimateProjectBytes(doc, layerCount) {
     var count = layerCount || doc.layers.length;
     return bytesForLayer(doc.width, doc.height) * count;
+  }
+
+  /* ==========================================================================
+     Geometría de trazos: filtros, simplificación, reconocimiento de formas y
+     curvas Bézier. Sin DOM para poder verificarlo desde Node.
+     ========================================================================== */
+
+  function distance(a, b) {
+    var dx = b.x - a.x;
+    var dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function pointSegmentDistance(p, a, b) {
+    var vx = b.x - a.x;
+    var vy = b.y - a.y;
+    var len2 = vx * vx + vy * vy;
+    if (len2 < 1e-9) { return distance(p, a); }
+    var t = ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2;
+    t = util.clamp(t, 0, 1);
+    var dx = p.x - (a.x + vx * t);
+    var dy = p.y - (a.y + vy * t);
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function pathLength(points) {
+    var total = 0;
+    var i;
+    for (i = 1; i < points.length; i += 1) {
+      total += distance(points[i - 1], points[i]);
+    }
+    return total;
+  }
+
+  function pointBounds(points) {
+    var minX = Infinity;
+    var minY = Infinity;
+    var maxX = -Infinity;
+    var maxY = -Infinity;
+    var i;
+    for (i = 0; i < points.length; i += 1) {
+      if (points[i].x < minX) { minX = points[i].x; }
+      if (points[i].y < minY) { minY = points[i].y; }
+      if (points[i].x > maxX) { maxX = points[i].x; }
+      if (points[i].y > maxY) { maxY = points[i].y; }
+    }
+    if (!points.length) { return null; }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  /* Ramer–Douglas–Peucker: conserva esquinas y reduce puntos redundantes. */
+  function simplifyRdp(points, epsilon) {
+    if (!points || points.length < 3) { return points ? points.slice(0) : []; }
+    var maxDist = -1;
+    var index = 0;
+    var i;
+    for (i = 1; i < points.length - 1; i += 1) {
+      var d = pointSegmentDistance(points[i], points[0], points[points.length - 1]);
+      if (d > maxDist) {
+        maxDist = d;
+        index = i;
+      }
+    }
+    if (maxDist > epsilon) {
+      var left = simplifyRdp(points.slice(0, index + 1), epsilon);
+      var right = simplifyRdp(points.slice(index), epsilon);
+      return left.slice(0, left.length - 1).concat(right);
+    }
+    return [points[0], points[points.length - 1]];
+  }
+
+  /* Elimina vértices casi alineados con sus vecinos. RDP puede conservar un
+     punto intermedio cuando el contorno es convexo; ese punto falsearía el
+     número de lados de un polígono. */
+  function dropFlatVertices(verts, epsilon) {
+    var list = verts.slice(0);
+    var changed = true;
+    var guard = 0;
+    while (changed && list.length > 3 && guard < 16) {
+      changed = false;
+      guard += 1;
+      var i;
+      for (i = 0; i < list.length; i += 1) {
+        var prev = list[(i - 1 + list.length) % list.length];
+        var next = list[(i + 1) % list.length];
+        if (pointSegmentDistance(list[i], prev, next) <= epsilon * 0.7) {
+          list.splice(i, 1);
+          changed = true;
+          break;
+        }
+      }
+    }
+    return list;
+  }
+
+  /* Media móvil ponderada. Se usa para el filtro de movimiento involuntario.
+     Los extremos se conservan para que el trazo no pierda su inicio. */
+  function smoothPoints(points, strength, passes) {
+    var src = points.slice(0);
+    var rounds = Math.max(1, Math.round(passes || 1));
+    var amount = util.clamp(strength, 0, 1);
+    var round;
+    var i;
+    for (round = 0; round < rounds; round += 1) {
+      var out = [src[0]];
+      for (i = 1; i < src.length - 1; i += 1) {
+        var midX = (src[i - 1].x + src[i].x * 2 + src[i + 1].x) / 4;
+        var midY = (src[i - 1].y + src[i].y * 2 + src[i + 1].y) / 4;
+        out.push({
+          x: src[i].x + (midX - src[i].x) * amount,
+          y: src[i].y + (midY - src[i].y) * amount
+        });
+      }
+      if (src.length > 1) { out.push(src[src.length - 1]); }
+      src = out;
+    }
+    return src;
+  }
+
+  function averagePoints(points) {
+    if (!points.length) { return null; }
+    var sx = 0;
+    var sy = 0;
+    var i;
+    for (i = 0; i < points.length; i += 1) {
+      sx += points[i].x;
+      sy += points[i].y;
+    }
+    return { x: sx / points.length, y: sy / points.length };
+  }
+
+  function isClosedPath(points, tolerance) {
+    if (points.length < 4) { return false; }
+    var b = pointBounds(points);
+    var diag = Math.sqrt(b.w * b.w + b.h * b.h);
+    var limit = tolerance == null ? Math.max(18, diag * 0.2) : tolerance;
+    return distance(points[0], points[points.length - 1]) <= limit;
+  }
+
+  function polygonArea(points) {
+    var area = 0;
+    var i;
+    for (i = 0; i < points.length; i += 1) {
+      var j = (i + 1) % points.length;
+      area += points[i].x * points[j].y - points[j].x * points[i].y;
+    }
+    return Math.abs(area) / 2;
+  }
+
+  function regularPolygonGeometry(center, radius, sides, rotation) {
+    var pts = [];
+    var i;
+    for (i = 0; i < sides; i += 1) {
+      var a = rotation + (i * Math.PI * 2) / sides;
+      pts.push({
+        x: center.x + Math.cos(a) * radius,
+        y: center.y + Math.sin(a) * radius
+      });
+    }
+    return pts;
+  }
+
+  /* Clasifica un trazo cerrado o abierto en una forma geométrica. La
+     confianza (0-1) permite que la corrección automática sea selectiva. */
+  function quickShapeForPoints(points, brushSize) {
+    if (!points || points.length < 4) { return null; }
+    var b = pointBounds(points);
+    var diag = Math.sqrt(b.w * b.w + b.h * b.h);
+    if (diag < 12) { return null; }
+    var total = pathLength(points);
+    if (total < 18) { return null; }
+    var width = Math.max(1, brushSize || 1);
+    var tol = Math.max(2.5, width * 0.45);
+    var closed = isClosedPath(points);
+    var first = points[0];
+    var last = points[points.length - 1];
+
+    /* Línea recta: abierta y con poca desviación respecto a la cuerda. */
+    if (!closed) {
+      var chord = distance(first, last);
+      if (chord > Math.max(20, diag * 0.45)) {
+        var maxDev = 0;
+        var i;
+        for (i = 1; i < points.length - 1; i += 1) {
+          var dev = pointSegmentDistance(points[i], first, last);
+          if (dev > maxDev) { maxDev = dev; }
+        }
+        var lineTol = Math.max(3, chord * 0.045) + tol * 0.4;
+        if (maxDev <= lineTol) {
+          var straightness = 1 - util.clamp(maxDev / lineTol, 0, 1);
+          return {
+            type: 'line',
+            confidence: 0.55 + straightness * 0.45,
+            points: [{ x: first.x, y: first.y }, { x: last.x, y: last.y }],
+            closed: false
+          };
+        }
+      }
+    }
+
+    if (closed && b.w > 10 && b.h > 10) {
+      /* Rectángulo / cuadrado: los puntos siguen el perímetro de la caja y el
+         área encerrada llena esa caja. Un círculo ocupa ~78 % y se descarta
+         aquí para pasar al test de elipse. */
+      var band = Math.max(4, Math.min(b.w, b.h) * 0.16 + tol);
+      var near = 0;
+      var j;
+      for (j = 0; j < points.length; j += 1) {
+        var p = points[j];
+        var edge = Math.min(
+          Math.abs(p.x - b.x), Math.abs(p.x - (b.x + b.w)),
+          Math.abs(p.y - b.y), Math.abs(p.y - (b.y + b.h))
+        );
+        if (edge <= band) { near += 1; }
+      }
+      var perimeterRatio = near / points.length;
+      var areaRatio = polygonArea(points) / (b.w * b.h);
+      if (perimeterRatio >= 0.76 && areaRatio >= 0.88) {
+        var square = Math.abs(b.w - b.h) <= Math.max(b.w, b.h) * 0.14;
+        return {
+          type: 'rect',
+          confidence: util.clamp((perimeterRatio - 0.6) / 0.4, 0.4, 1),
+          square: square,
+          x: b.x, y: b.y, w: b.w, h: b.h,
+          points: [
+            { x: b.x, y: b.y },
+            { x: b.x + b.w, y: b.y },
+            { x: b.x + b.w, y: b.y + b.h },
+            { x: b.x, y: b.y + b.h }
+          ],
+          closed: true
+        };
+      }
+
+      /* Elipse: error radial bajo respecto a la elipse inscrita en la caja. */
+      var cx = b.x + b.w / 2;
+      var cy = b.y + b.h / 2;
+      var rx = b.w / 2;
+      var ry = b.h / 2;
+      var sumErr = 0;
+      var maxErr = 0;
+      var k;
+      for (k = 0; k < points.length; k += 1) {
+        var nx = (points[k].x - cx) / rx;
+        var ny = (points[k].y - cy) / ry;
+        var value = nx * nx + ny * ny;
+        var err = Math.abs(value - 1);
+        sumErr += err;
+        if (err > maxErr) { maxErr = err; }
+      }
+      var meanErr = sumErr / points.length;
+      /* Un polígono inscrito también enciende el test de área, pero sus
+         lados se hunden hasta un 25 % respecto al círculo. La tolerancia
+         radial estricta deja pasar curvas dibujadas a mano y rechaza
+         pentágonos o hexágonos que deben probarse como polígonos. */
+      if (meanErr <= 0.14 && maxErr <= 0.25) {
+        return {
+          type: 'ellipse',
+          confidence: util.clamp(1 - meanErr * 1.7, 0.4, 1),
+          cx: cx, cy: cy, rx: rx, ry: ry,
+          closed: true
+        };
+      }
+    }
+
+    /* Triángulo y polígonos: se simplifica el contorno y se estudian los
+       vértices. Un polígono regular exige lados de longitud parecida. */
+    if (closed) {
+      var eps = Math.max(4, diag * 0.055);
+      var simplified = simplifyRdp(points, eps);
+      var verts = simplified.slice(0);
+      if (verts.length > 1 && distance(verts[0], verts[verts.length - 1]) < eps * 1.6) {
+        verts.pop();
+      }
+      verts = dropFlatVertices(verts, eps);
+      if (verts.length === 3) {
+        var triArea = polygonArea(verts);
+        if (triArea > diag * diag * 0.04) {
+          return {
+            type: 'triangle',
+            confidence: 0.6,
+            points: verts,
+            closed: true
+          };
+        }
+      }
+      if (verts.length >= 4 && verts.length <= 8) {
+        var lens = [];
+        var m;
+        for (m = 0; m < verts.length; m += 1) {
+          lens.push(distance(verts[m], verts[(m + 1) % verts.length]));
+        }
+        var mean = 0;
+        for (m = 0; m < lens.length; m += 1) { mean += lens[m]; }
+        mean /= lens.length;
+        var variance = 0;
+        for (m = 0; m < lens.length; m += 1) {
+          variance += (lens[m] - mean) * (lens[m] - mean);
+        }
+        variance = Math.sqrt(variance / lens.length) / Math.max(1, mean);
+        if (variance < 0.34) {
+          /* Centroide de los vértices: el centro de la caja no coincide con
+             el centro de un polígono regular girado. */
+          var center = averagePoints(verts);
+          var sumR = 0;
+          for (m = 0; m < verts.length; m += 1) {
+            sumR += distance(center, verts[m]);
+          }
+          var radius = sumR / verts.length;
+          var rot = Math.atan2(verts[0].y - center.y, verts[0].x - center.x);
+          return {
+            type: 'polygon',
+            confidence: util.clamp(1 - variance, 0.45, 0.98),
+            sides: verts.length,
+            cx: center.x, cy: center.y, radius: radius,
+            rotation: rot,
+            points: regularPolygonGeometry(center, radius, verts.length, rot),
+            closed: true
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /* Catmull-Rom → Bézier cúbica. Cada ancla guarda sus dos manejadores en
+     coordenadas absolutas para poder editarlos con el dedo. */
+  function catmullRomToBezier(points, closed, tension) {
+    var n = points.length;
+    if (n < 2) { return { anchors: [], closed: false }; }
+    var t = (tension == null ? 1 / 6 : tension);
+    var anchors = [];
+    var i;
+    for (i = 0; i < n; i += 1) {
+      var prev;
+      var next;
+      if (closed) {
+        prev = points[(i - 1 + n) % n];
+        next = points[(i + 1) % n];
+      } else {
+        prev = points[i > 0 ? i - 1 : 0];
+        next = points[i < n - 1 ? i + 1 : n - 1];
+      }
+      var dx = (next.x - prev.x) * t;
+      var dy = (next.y - prev.y) * t;
+      anchors.push({
+        x: points[i].x,
+        y: points[i].y,
+        inX: points[i].x - dx,
+        inY: points[i].y - dy,
+        outX: points[i].x + dx,
+        outY: points[i].y + dy
+      });
+    }
+    return { anchors: anchors, closed: !!closed };
+  }
+
+  function bezierPoint(p0, c1, c2, p1, t) {
+    var mt = 1 - t;
+    var a = mt * mt * mt;
+    var b = 3 * mt * mt * t;
+    var c = 3 * mt * t * t;
+    var d = t * t * t;
+    return {
+      x: a * p0.x + b * c1.x + c * c2.x + d * p1.x,
+      y: a * p0.y + b * c1.y + c * c2.y + d * p1.y
+    };
+  }
+
+  function sampleBezier(anchors, closed, stepsPerSegment) {
+    if (!anchors || anchors.length < 2) { return []; }
+    var steps = Math.max(3, Math.round(stepsPerSegment || 8));
+    var out = [];
+    var i;
+    var count = closed ? anchors.length : anchors.length - 1;
+    for (i = 0; i < count; i += 1) {
+      var a = anchors[i];
+      var b = anchors[(i + 1) % anchors.length];
+      var c1 = { x: a.outX, y: a.outY };
+      var c2 = { x: b.inX, y: b.inY };
+      var s;
+      for (s = 0; s < steps; s += 1) {
+        out.push(bezierPoint(a, c1, c2, b, s / steps));
+      }
+    }
+    if (!closed && anchors.length) {
+      var last = anchors[anchors.length - 1];
+      out.push({ x: last.x, y: last.y });
+    }
+    return out;
+  }
+
+  /* Convierte un trazo libre en curvas editables. El epsilon controla
+     cuántos anclas se conservan. */
+  function curveForPoints(points, options) {
+    if (!points || points.length < 3) { return null; }
+    var opts = options || {};
+    var b = pointBounds(points);
+    var diag = Math.sqrt(b.w * b.w + b.h * b.h);
+    var epsilon = opts.epsilon || Math.max(2.5, diag * 0.012);
+    var simplified = simplifyRdp(points, epsilon);
+    var closed = opts.closed;
+    if (closed == null) {
+      closed = isClosedPath(points, Math.max(14, diag * 0.12));
+    }
+    if (closed && simplified.length > 1 &&
+        distance(simplified[0], simplified[simplified.length - 1]) < epsilon * 2) {
+      simplified.pop();
+    }
+    if (simplified.length < 2) { return null; }
+    var curves = catmullRomToBezier(simplified, closed, opts.tension);
+    return {
+      anchors: curves.anchors,
+      closed: curves.closed,
+      sampled: sampleBezier(curves.anchors, curves.closed, opts.steps || 8)
+    };
   }
 
   PCW.model = {
@@ -1762,6 +2294,10 @@
     duplicateLayerMeta: duplicateLayerMeta,
     nextLayerName: nextLayerName,
     getBrush: getBrush,
+    resolveBrush: resolveBrush,
+    setBrushOverride: setBrushOverride,
+    clearBrushOverride: clearBrushOverride,
+    brushOverride: brushOverride,
     brushSets: brushSets,
     blendLabel: blendLabel,
     copyLayerMeta: copyLayerMeta,
@@ -1769,7 +2305,20 @@
     fromRecord: fromRecord,
     validSize: validSize,
     estimateProjectBytes: estimateProjectBytes,
-    cleanName: cleanName
+    cleanName: cleanName,
+    distance: distance,
+    pointSegmentDistance: pointSegmentDistance,
+    pathLength: pathLength,
+    pointBounds: pointBounds,
+    simplifyRdp: simplifyRdp,
+    smoothPoints: smoothPoints,
+    averagePoints: averagePoints,
+    isClosedPath: isClosedPath,
+    quickShapeForPoints: quickShapeForPoints,
+    catmullRomToBezier: catmullRomToBezier,
+    sampleBezier: sampleBezier,
+    curveForPoints: curveForPoints,
+    bezierPoint: bezierPoint
   };
 
 })(typeof window !== 'undefined' ? window : this);
@@ -2036,6 +2585,14 @@
     if (id === 'panel-adjustments' && PCW.studio && PCW.studio.cancelAdjust) {
       PCW.studio.cancelAdjust();
     }
+    /* Cerrar el panel de curva sin Aplicar equivale a cancelar la edición:
+       se restaura el trazo original en lugar de dejarlo interceptando el
+       lienzo sin controles visibles. */
+    if (id === 'panel-curve-edit' && PCW.studio && PCW.studio.hasCurveEdit &&
+        PCW.studio.hasCurveEdit()) {
+      PCW.studio.cancelCurveEdit();
+      return;
+    }
     dom.hide(dom.id(id));
   }
 
@@ -2055,6 +2612,9 @@
   }
 
   function closeAll() {
+    if (PCW.studio && PCW.studio.hasCurveEdit && PCW.studio.hasCurveEdit()) {
+      PCW.studio.cancelCurveEdit();
+    }
     var list = panelEls();
     var i;
     for (i = 0; i < list.length; i += 1) {
@@ -2908,6 +3468,87 @@
     });
   }
 
+  /* Importa un respaldo .pcw. Siempre crea un proyecto nuevo para no
+     sobrescribir el original; las capas se validan antes de escribir. */
+  var IMPORT_MAX_BYTES = 80 * 1024 * 1024;
+
+  function importProjectFile(file) {
+    if (!file) { return; }
+    if (file.size > IMPORT_MAX_BYTES) {
+      ui.toast('El archivo supera los 80 MB; no se puede importar', 3200);
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function () {
+      ui.toast('No se pudo leer el archivo', 3000);
+    };
+    reader.onload = function () {
+      var payload;
+      try {
+        payload = JSON.parse(String(reader.result || ''));
+      } catch (e) {
+        ui.toast('El archivo no es un .pcw válido', 3200);
+        return;
+      }
+      var record = payload && (payload.doc || payload.record) ? (payload.doc || payload.record) : payload;
+      if (!record || !record.layers) {
+        ui.toast('El respaldo no contiene un proyecto', 3200);
+        return;
+      }
+      var doc;
+      try {
+        doc = model.fromRecord(record);
+      } catch (e2) {
+        ui.toast('Proyecto inválido: ' + e2.message, 3600);
+        return;
+      }
+      var budget = model.budgetFor(doc.width, doc.height);
+      if (budget.overBudget || doc.layers.length > budget.maxLayers) {
+        ui.toast('El proyecto no cabe en el presupuesto de 40 MB', 3600);
+        return;
+      }
+      doc.id = util.uid('doc');
+      doc.createdAt = Date.now();
+      doc.updatedAt = Date.now();
+      var layerData = {};
+      var source = payload.layers || [];
+      var i;
+      if (source.length) {
+        for (i = 0; i < source.length; i += 1) {
+          if (source[i] && source[i].id && typeof source[i].data === 'string' &&
+              source[i].data.indexOf('data:image/') === 0) {
+            layerData[source[i].id] = source[i].data;
+          }
+        }
+      } else if (payload.layerData) {
+        for (i in payload.layerData) {
+          if (Object.prototype.hasOwnProperty.call(payload.layerData, i) &&
+              typeof payload.layerData[i] === 'string') {
+            layerData[i] = payload.layerData[i];
+          }
+        }
+      }
+      var missing = 0;
+      for (i = 0; i < doc.layers.length; i += 1) {
+        if (!layerData[doc.layers[i].id]) { missing += 1; }
+      }
+      if (missing > 0) {
+        ui.toast('Aviso: ' + missing + ' capa(s) llegarán vacías', 3600);
+      }
+      storage.saveProject(model.toRecord(doc, record.thumb || ''), {
+        layerData: layerData
+      }, function (err) {
+        if (err) {
+          ui.toast('No se pudo importar: ' + err.message, 3600);
+          return;
+        }
+        refresh();
+        ui.toast('Proyecto importado');
+      });
+    };
+    reader.readAsText(file);
+  }
+
   function projectMenu(projectId) {
     var record = findProject(projectId);
     if (!record) { return; }
@@ -2980,6 +3621,15 @@
       PCW.diag.show();
     });
 
+    var importInput = dom.id('file-project');
+    if (importInput) {
+      dom.on(importInput, 'change', function () {
+        var file = importInput.files && importInput.files[0];
+        if (file) { importProjectFile(file); }
+        importInput.value = '';
+      });
+    }
+
     dom.on(dom.id('gallery-grid'), 'click', function (ev) {
       var openEl = findUp(ev.target, 'data-open');
       if (openEl) {
@@ -3042,10 +3692,47 @@
   var lastTouchTime = 0;
   var sizeSlider = null;
   var opacitySlider = null;
+  var pointerPressure = 0.5;
+  var pointerTiltX = 0;
+  var pointerTiltY = 0;
 
   var stampCache = {};
   var stampOrder = [];
   var stampBytes = 0;
+
+  /* Asistencia de trazo: QuickShape se activa al mantener el dedo quieto al
+     final; el reconocimiento de curvas se aplica a petición del usuario. */
+  var QUICK_HOLD_MS = 380;
+  var quickHoldTimer = null;
+  var QUICK_PREF_KEY = 'pcw.quickshape.v1';
+  var CURVE_PREF_KEY = 'pcw.curverecognition.v1';
+
+  function readBoolPref(key, fallback) {
+    try {
+      if (root.localStorage) {
+        var raw = root.localStorage.getItem(key);
+        if (raw === '0') { return false; }
+        if (raw === '1') { return true; }
+      }
+    } catch (e) { /* almacenamiento no disponible */ }
+    return fallback;
+  }
+
+  function writeBoolPref(key, value) {
+    try {
+      if (root.localStorage) { root.localStorage.setItem(key, value ? '1' : '0'); }
+    } catch (e) { /* almacenamiento no disponible */ }
+  }
+
+  function readQuickShapePref() { return readBoolPref(QUICK_PREF_KEY, true); }
+  function readCurvePref() { return readBoolPref(CURVE_PREF_KEY, true); }
+
+  function clearQuickHold() {
+    if (quickHoldTimer) {
+      clearTimeout(quickHoldTimer);
+      quickHoldTimer = null;
+    }
+  }
 
   var rafFn = root.requestAnimationFrame || function (cb) {
     return setTimeout(function () { cb(Date.now()); }, 16);
@@ -3103,7 +3790,10 @@
   function getStamp(brush, color, tool, radius) {
     var qr = quantizeRadius(radius);
     var colorKey = (tool === 'eraser') ? 'er' : color;
-    var key = brush.id + '|' + colorKey + '|' + tool + '|' + qr;
+    var shapeKey = Math.round((brush.hardness || 0) * 100) + ':' +
+      Math.round((brush.grain || 0) * 100) + ':' +
+      Math.round((brush.streak || 0) * 100);
+    var key = brush.id + '|' + colorKey + '|' + tool + '|' + qr + '|' + shapeKey;
     if (stampCache[key]) { return stampCache[key].canvas; }
 
     var size = Math.max(2, Math.ceil(qr * 2));
@@ -3144,6 +3834,39 @@
       g.globalCompositeOperation = 'source-over';
     }
 
+    /* Cerdas / vetas: rayas finas que vacían parte de la estampa. Da el
+       borde seco de Dry Ink y la textura quebrada de Shale Brush. */
+    var streak = brush.streak || 0;
+    if (streak > 0.05 && tool !== 'eraser') {
+      g.globalCompositeOperation = 'destination-out';
+      var lines = Math.max(2, Math.round(size / 5));
+      var line;
+      for (line = 0; line < lines; line += 1) {
+        var lx = (line + 0.5) * (size / lines) + (Math.random() - 0.5) * 1.5;
+        var gaps = 2 + Math.floor(Math.random() * 3);
+        var gap;
+        for (gap = 0; gap < gaps; gap += 1) {
+          var gy = Math.random() * size * 0.9;
+          var gh = Math.max(1.5, size * (0.05 + Math.random() * 0.16));
+          g.fillStyle = 'rgba(0,0,0,' + (0.15 + Math.random() * 0.45 * streak) + ')';
+          g.fillRect(lx - 0.5, gy, 1 + Math.random() * 0.9, gh);
+        }
+      }
+      /* Borde irregular: pequeños mordiscos en el contorno. */
+      var bites = Math.floor(7 + streak * 10);
+      var bite;
+      for (bite = 0; bite < bites; bite += 1) {
+        var ba = Math.random() * Math.PI * 2;
+        var br = cx * (0.72 + Math.random() * 0.26);
+        var bs = Math.max(1, size * 0.025);
+        g.fillStyle = 'rgba(0,0,0,' + (0.25 + Math.random() * 0.4 * streak) + ')';
+        g.beginPath();
+        g.arc(cx + Math.cos(ba) * br, cx + Math.sin(ba) * br, bs, 0, Math.PI * 2, false);
+        g.fill();
+      }
+      g.globalCompositeOperation = 'source-over';
+    }
+
     var bytes = size * size * 4;
     evictStamps(bytes);
     stampCache[key] = { canvas: c, bytes: bytes };
@@ -3157,46 +3880,83 @@
     return x - Math.floor(x);
   }
 
+  /* Puntos extra que genera la guía de simetría. La guía es visual y también
+     afecta al trazo: lo que se pinta a un lado aparece en el espejo. */
+  function symmetryPoints(s, x, y) {
+    var pts = [{ x: x, y: y }];
+    var mode = s.symmetry || 'off';
+    if (mode === 'off') { return pts; }
+    var w = s.doc.width;
+    var h = s.doc.height;
+    if (mode === 'vertical' || mode === 'quad') {
+      pts.push({ x: w - x, y: y });
+    }
+    if (mode === 'horizontal' || mode === 'quad') {
+      pts.push({ x: x, y: h - y });
+    }
+    if (mode === 'quad') {
+      pts.push({ x: w - x, y: h - y });
+    }
+    return pts;
+  }
+
   function stampAt(s, x, y, factor, alphaFactor, angle) {
     var stroke = s.stroke;
     if (!stroke) { return; }
+    /* Presión del lápiz (si el navegador la expone). A presión media el
+       tamaño no cambia; por encima engorda y por debajo afina. */
+    var pressAmount = s.brush.pressure || 0;
+    var pressureValue = (typeof stroke.lastPressure === 'number')
+      ? util.clamp(stroke.lastPressure, 0, 1) : 0.5;
+    if (pressAmount > 0.01) {
+      factor *= 1 - pressAmount * 0.5 + pressAmount * pressureValue;
+    }
     var radius = (s.size / 2) * factor;
     if (radius < 0.35) { return; }
     var ctx = layerCtx(s, stroke.layerId);
     if (!ctx) { return; }
     var sprite;
     var alpha = (s.opacity / 100) * alphaFactor;
-    var layer = model.findLayer(s.doc, stroke.layerId);
-
-    if (s.tool === 'smudge') {
-      smudgeAt(s, x, y, radius, alpha);
-    } else {
-      sprite = getStamp(s.brush, s.color, s.tool, radius);
-      var target = s.strokeBufferCtx || ctx;
-      target.save();
-      if (s.strokeBufferCtx) {
-        target.globalCompositeOperation = 'source-over';
-      } else if (s.tool === 'eraser') {
-        target.globalCompositeOperation = 'destination-out';
-      } else if (layer && layer.alphaLock) {
-        target.globalCompositeOperation = 'source-atop';
-      } else {
-        target.globalCompositeOperation = 'source-over';
-      }
-      target.globalAlpha = util.clamp(alpha, 0, 1);
-      target.drawImage(sprite, x - radius, y - radius, radius * 2, radius * 2);
-      target.restore();
-      if (s.strokeBufferCtx) {
-        s.strokeBufferVersion += 1;
-      }
+    if (pressAmount > 0.01) {
+      alpha *= 1 - pressAmount * 0.4 * (1 - pressureValue);
     }
+    var layer = model.findLayer(s.doc, stroke.layerId);
+    var points = symmetryPoints(s, x, y);
+    var p;
+    var pi;
 
-    var b = stroke.bounds;
-    if (x - radius < b.x0) { b.x0 = x - radius; }
-    if (y - radius < b.y0) { b.y0 = y - radius; }
-    if (x + radius > b.x1) { b.x1 = x + radius; }
-    if (y + radius > b.y1) { b.y1 = y + radius; }
-    stroke.stampCount += 1;
+    for (pi = 0; pi < points.length; pi += 1) {
+      p = points[pi];
+      if (s.tool === 'smudge') {
+        smudgeAt(s, p.x, p.y, radius, alpha);
+      } else {
+        sprite = getStamp(s.brush, s.color, s.tool, radius);
+        var target = s.strokeBufferCtx || ctx;
+        target.save();
+        if (s.strokeBufferCtx) {
+          target.globalCompositeOperation = 'source-over';
+        } else if (s.tool === 'eraser') {
+          target.globalCompositeOperation = 'destination-out';
+        } else if (layer && layer.alphaLock) {
+          target.globalCompositeOperation = 'source-atop';
+        } else {
+          target.globalCompositeOperation = 'source-over';
+        }
+        target.globalAlpha = util.clamp(alpha, 0, 1);
+        target.drawImage(sprite, p.x - radius, p.y - radius, radius * 2, radius * 2);
+        target.restore();
+        if (s.strokeBufferCtx) {
+          s.strokeBufferVersion += 1;
+        }
+      }
+
+      var b = stroke.bounds;
+      if (p.x - radius < b.x0) { b.x0 = p.x - radius; }
+      if (p.y - radius < b.y0) { b.y0 = p.y - radius; }
+      if (p.x + radius > b.x1) { b.x1 = p.x + radius; }
+      if (p.y + radius > b.y1) { b.y1 = p.y + radius; }
+      stroke.stampCount += 1;
+    }
     stroke.lastDir = angle || 0;
     s.needsRender = true;
   }
@@ -3315,6 +4075,13 @@
     var b = t.bounds;
     var cx = b.x + b.w / 2;
     var cy = b.y + b.h / 2;
+    if (t.base) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.drawImage(t.base, 0, 0);
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(cx + t.tx, cy + t.ty);
     ctx.rotate(t.rotation);
@@ -3404,6 +4171,86 @@
       traceOutline(ctx, sel.outline);
     }
     ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawGuideOverlay(ctx, s, invScale) {
+    var mode = s.symmetry || 'off';
+    if (mode === 'off') { return; }
+    var w = s.doc.width;
+    var h = s.doc.height;
+    var scale = Math.max(0.08, s.view.scale);
+    ctx.save();
+    ctx.lineWidth = Math.max(0.7, 1.2 / scale);
+    dashLine(ctx, scale);
+    ctx.strokeStyle = 'rgba(47,111,237,0.72)';
+    ctx.beginPath();
+    if (mode === 'vertical' || mode === 'quad') {
+      ctx.moveTo(w / 2, 0);
+      ctx.lineTo(w / 2, h);
+    }
+    if (mode === 'horizontal' || mode === 'quad') {
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function tracePolyline(ctx, points, closed) {
+    if (!points || points.length < 2) { return; }
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    var i;
+    for (i = 1; i < points.length; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    if (closed) { ctx.closePath(); }
+    ctx.stroke();
+  }
+
+  function drawCurveOverlay(ctx, s, invScale) {
+    var ce = s.curveEdit;
+    if (!ce) { return; }
+    var scale = Math.max(0.08, s.view.scale);
+    var sampled = model.sampleBezier(ce.anchors, ce.closed, 12);
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.setLineDash && ctx.setLineDash([]);
+    ctx.lineWidth = Math.max(0.8, 1.6 / scale);
+    ctx.strokeStyle = 'rgba(47,111,237,0.92)';
+    tracePolyline(ctx, sampled, ce.closed);
+
+    var handleRadius = Math.max(2.5, 4.5 / scale);
+    var anchorRadius = Math.max(3.5, 6 / scale);
+    var i;
+    for (i = 0; i < ce.anchors.length; i += 1) {
+      var a = ce.anchors[i];
+      ctx.strokeStyle = 'rgba(47,111,237,0.45)';
+      ctx.lineWidth = Math.max(0.6, 1 / scale);
+      ctx.beginPath();
+      ctx.moveTo(a.inX, a.inY);
+      ctx.lineTo(a.x, a.y);
+      ctx.lineTo(a.outX, a.outY);
+      ctx.stroke();
+
+      ctx.fillStyle = '#2f6fed';
+      ctx.beginPath();
+      ctx.arc(a.inX, a.inY, handleRadius, 0, Math.PI * 2, false);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(a.outX, a.outY, handleRadius, 0, Math.PI * 2, false);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, anchorRadius, 0, Math.PI * 2, false);
+      ctx.fill();
+      ctx.strokeStyle = '#2f6fed';
+      ctx.lineWidth = Math.max(0.9, 1.4 / scale);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -3556,6 +4403,8 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
     ctx.strokeRect(0, 0, doc.width, doc.height);
 
+    drawGuideOverlay(ctx, st, invScale);
+    drawCurveOverlay(ctx, st, invScale);
     drawSelectionOverlay(ctx, st, invScale);
     drawTransformOverlay(ctx, st, invScale);
 
@@ -3868,7 +4717,13 @@
     /* Se consulta la cima sin sacarla: si la capa ya no existe, el paso
        permanece en el historial en lugar de perderse. */
     var entry = s.history.undo[s.history.undo.length - 1];
-    if (!applyHistoryEntry(s, entry, entry.before)) {
+    var applied;
+    if (entry.type === 'structure' && typeof entry.apply === 'function') {
+      applied = entry.apply(false);
+    } else {
+      applied = applyHistoryEntry(s, entry, entry.before);
+    }
+    if (!applied) {
       syncHistoryUi();
       ui.toast('No se pudo deshacer este paso');
       return false;
@@ -3893,7 +4748,13 @@
       return false;
     }
     var entry = s.history.redo[s.history.redo.length - 1];
-    if (!applyHistoryEntry(s, entry, entry.after)) {
+    var applied;
+    if (entry.type === 'structure' && typeof entry.apply === 'function') {
+      applied = entry.apply(true);
+    } else {
+      applied = applyHistoryEntry(s, entry, entry.after);
+    }
+    if (!applied) {
       syncHistoryUi();
       ui.toast('No se pudo rehacer este paso');
       return false;
@@ -3967,6 +4828,10 @@
       ui.toast('La capa activa está oculta');
       return;
     }
+    if (s.curveEdit) {
+      beginCurveDrag(s, p);
+      return;
+    }
     if (s.tool === 'eyedropper') {
       pickColor(s, p);
       return;
@@ -4012,9 +4877,18 @@
       snapshotReady: false,
       noHistory: false,
       before: null,
+      points: [{ x: p.x, y: p.y }],
+      rawPoints: [{ x: p.x, y: p.y, pressure: pointerPressure }],
+      lastMoveAt: now(),
+      lastPressure: pointerPressure,
+      lastTiltX: pointerTiltX,
+      lastTiltY: pointerTiltY,
+      quickApplied: false,
+      quickType: null,
       startedAt: now()
     };
     s.needsRender = true;
+    armQuickHold(s);
   }
 
   function strokeTo(p) {
@@ -4028,8 +4902,68 @@
       updateTransformDrag(s, p);
       return;
     }
+    if (s.curveEdit) {
+      updateCurveDrag(s, p);
+      return;
+    }
     if (!s.stroke) { return; }
     var stroke = s.stroke;
+    /* Si QuickShape ya ajustó la forma, el trazo queda congelado hasta que
+       se levante el dedo. */
+    if (stroke.quickApplied || stroke.curveFrozen) { return; }
+
+    /* Muestras crudas para reconocimiento y edición Bézier. */
+    stroke.lastMoveAt = now();
+    stroke.lastPressure = pointerPressure;
+    stroke.lastTiltX = pointerTiltX;
+    stroke.lastTiltY = pointerTiltY;
+    var lastRaw = stroke.rawPoints[stroke.rawPoints.length - 1];
+    if (!lastRaw || model.distance(lastRaw, p) >= 1.2) {
+      if (stroke.rawPoints.length < 700) {
+        stroke.rawPoints.push({ x: p.x, y: p.y, pressure: pointerPressure });
+      }
+      if (stroke.points.length < 700) {
+        stroke.points.push({ x: p.x, y: p.y });
+      }
+    }
+
+    /* 1) Filtro de movimiento: media móvil de las últimas muestras. */
+    var motion = s.brush.motionFilter || 0;
+    var raw = p;
+    if (motion > 0.01) {
+      var windowSize = 1 + Math.round(motion * 8);
+      if (!stroke.mf) { stroke.mf = []; }
+      stroke.mf.push({ x: p.x, y: p.y });
+      if (stroke.mf.length > windowSize) { stroke.mf.shift(); }
+      raw = model.averagePoints(stroke.mf) || p;
+    }
+
+    /* 2) Estabilización: seguimiento exponencial con retardo controlado. */
+    var stabilize = s.brush.stabilize || 0;
+    if (stabilize > 0.01) {
+      if (!stroke.stabilized) {
+        stroke.stabilized = { x: raw.x, y: raw.y };
+      }
+      var sFollow = 1 - Math.min(0.92, stabilize * 0.92);
+      stroke.stabilized.x += (raw.x - stroke.stabilized.x) * sFollow;
+      stroke.stabilized.y += (raw.y - stroke.stabilized.y) * sFollow;
+      raw = { x: stroke.stabilized.x, y: stroke.stabilized.y };
+    }
+
+    /* 3) StreamLine: suavizado adicional de líneas y curvas. */
+    var streamline = s.brush.streamline || 0;
+    if (streamline > 0.01) {
+      if (!stroke.smooth) {
+        stroke.smooth = { x: raw.x, y: raw.y };
+      }
+      var follow = 1 - Math.min(0.9, streamline * 0.9);
+      stroke.smooth.x += (raw.x - stroke.smooth.x) * follow;
+      stroke.smooth.y += (raw.y - stroke.smooth.y) * follow;
+      raw = { x: stroke.smooth.x, y: stroke.smooth.y };
+    }
+    p = raw;
+    armQuickHold(s);
+
     var from = stroke.stampPoint;
     var dx = p.x - from.x;
     var dy = p.y - from.y;
@@ -4090,9 +5024,182 @@
     s.needsRender = true;
   }
 
+  /* --------------------------------------- QuickShape y corrección de formas */
+
+  function shapeLabel(shape) {
+    if (!shape) { return 'forma'; }
+    if (shape.type === 'line') { return 'línea'; }
+    if (shape.type === 'rect') { return shape.square ? 'cuadrado' : 'rectángulo'; }
+    if (shape.type === 'ellipse') { return 'elipse'; }
+    if (shape.type === 'triangle') { return 'triángulo'; }
+    if (shape.type === 'polygon') { return 'polígono de ' + shape.sides + ' lados'; }
+    if (shape.type === 'curve') { return 'curva'; }
+    return 'forma';
+  }
+
+  function quickShapeAllowed(s, shape) {
+    var correction = s.brush.shapeCorrection == null ? 1 : s.brush.shapeCorrection;
+    if (correction <= 0.01) { return false; }
+    var minimum = 0.92 - correction * 0.6;
+    return shape.confidence >= minimum;
+  }
+
+  function clearStrokeForShape(s, stroke) {
+    var w = s.doc.width;
+    var h = s.doc.height;
+    if (s.strokeBufferCtx) {
+      s.strokeBufferCtx.save();
+      s.strokeBufferCtx.setTransform(1, 0, 0, 1, 0, 0);
+      s.strokeBufferCtx.globalAlpha = 1;
+      s.strokeBufferCtx.globalCompositeOperation = 'source-over';
+      s.strokeBufferCtx.clearRect(0, 0, w, h);
+      s.strokeBufferCtx.restore();
+      s.strokeBufferVersion += 1;
+      s.strokeViewVersion = -1;
+      if (s.strokeViewCtx) {
+        s.strokeViewCtx.clearRect(0, 0, w, h);
+      }
+      return true;
+    }
+    if (!stroke.before) { return false; }
+    var ctx = layerCtx(s, stroke.layerId);
+    if (!ctx) { return false; }
+    try {
+      ctx.putImageData(stroke.before, 0, 0);
+    } catch (e) {
+      PCW.logError('studio:quickshape-clear', e);
+      return false;
+    }
+    return true;
+  }
+
+  function stampPathSegment(s, a, b, spacing) {
+    var dx = b.x - a.x;
+    var dy = b.y - a.y;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 0.01) { return; }
+    var steps = Math.max(1, Math.ceil(len / spacing));
+    var angle = Math.atan2(dy, dx);
+    var i;
+    for (i = 0; i <= steps; i += 1) {
+      var t = i / steps;
+      stampAt(s, a.x + dx * t, a.y + dy * t, 1, 1, angle);
+    }
+  }
+
+  function drawShapeStamps(s, shape, spacing) {
+    var i;
+    if (shape.type === 'ellipse') {
+      var perimeter = Math.PI * (3 * (shape.rx + shape.ry) -
+        Math.sqrt((3 * shape.rx + shape.ry) * (shape.rx + 3 * shape.ry)));
+      var count = Math.max(24, Math.ceil(perimeter / spacing));
+      var prev = null;
+      for (i = 0; i <= count; i += 1) {
+        var ang = (i / count) * Math.PI * 2;
+        var pt = {
+          x: shape.cx + Math.cos(ang) * shape.rx,
+          y: shape.cy + Math.sin(ang) * shape.ry
+        };
+        if (prev) { stampPathSegment(s, prev, pt, spacing); }
+        prev = pt;
+      }
+      return;
+    }
+    var pts = shape.points || [];
+    if (shape.type === 'line') {
+      if (pts.length >= 2) { stampPathSegment(s, pts[0], pts[1], spacing); }
+      return;
+    }
+    if (shape.type === 'rect') {
+      pts = [
+        { x: shape.x, y: shape.y },
+        { x: shape.x + shape.w, y: shape.y },
+        { x: shape.x + shape.w, y: shape.y + shape.h },
+        { x: shape.x, y: shape.y + shape.h }
+      ];
+    }
+    if (pts.length < 2) { return; }
+    for (i = 0; i < pts.length; i += 1) {
+      stampPathSegment(s, pts[i], pts[(i + 1) % pts.length], spacing);
+    }
+  }
+
+  function applyShapeToStroke(s, shape) {
+    var stroke = s.stroke;
+    if (!stroke || !shape) { return false; }
+    if (!clearStrokeForShape(s, stroke)) { return false; }
+    stroke.bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    stroke.stampCount = 0;
+    var spacing = Math.max(0.8, s.size * (s.brush.spacing || 0.1));
+    drawShapeStamps(s, shape, spacing);
+    if (stroke.stampCount === 0) { return false; }
+    stroke.quickType = shape.type;
+    s.lastQuickShape = { type: shape.type, confidence: shape.confidence };
+    s.needsRender = true;
+    return true;
+  }
+
+  function tryQuickShape(s) {
+    var stroke = s.stroke;
+    if (!stroke || stroke.quickApplied) { return false; }
+    if (s.tool !== 'brush' && s.tool !== 'eraser') { return false; }
+    if (!s.quickShape) { return false; }
+    var shape = model.quickShapeForPoints(stroke.points, s.size);
+    if (!shape || !quickShapeAllowed(s, shape)) { return false; }
+    if (!applyShapeToStroke(s, shape)) { return false; }
+    stroke.quickApplied = true;
+    return true;
+  }
+
+  function armQuickHold(s) {
+    if (!s || !s.quickShape || !s.stroke || s.stroke.quickApplied) { return; }
+    if (s.tool !== 'brush' && s.tool !== 'eraser') { return; }
+    if (s.curveEdit) { return; }
+    var stroke = s.stroke;
+    var anchor = stroke.rawPoints[stroke.rawPoints.length - 1];
+    if (quickHoldTimer && stroke.holdAnchor && anchor &&
+        model.distance(stroke.holdAnchor, anchor) < 2) {
+      return;
+    }
+    clearQuickHold();
+    stroke.holdAnchor = anchor ? { x: anchor.x, y: anchor.y } : null;
+    quickHoldTimer = setTimeout(function () {
+      quickHoldTimer = null;
+      if (st !== s || s.stroke !== stroke || stroke.quickApplied) { return; }
+      if (tryQuickShape(s)) {
+        ui.toast('QuickShape: ' + shapeLabel({ type: stroke.quickType }), 1400);
+      }
+    }, QUICK_HOLD_MS);
+  }
+
+  /* Cierra el trazo hasta el último punto crudo aunque el filtro vaya con
+     retardo. Evita que un trazo con estabilización alta quede corto. */
+  function flushStrokeFilters(s, stroke) {
+    if (!stroke || stroke.quickApplied) { return; }
+    var last = stroke.rawPoints[stroke.rawPoints.length - 1];
+    if (!last) { return; }
+    var from = stroke.stampPoint;
+    var d = model.distance(from, last);
+    var spacing = Math.max(0.8, s.size * (s.brush.spacing || 0.1));
+    if (d < spacing) { return; }
+    var limit = Math.max(8, s.size * 3);
+    if (d > limit) {
+      var t = limit / d;
+      last = { x: from.x + (last.x - from.x) * t, y: from.y + (last.y - from.y) * t };
+    }
+    stampPathSegment(s, from, last, spacing);
+    stroke.stampPoint = { x: last.x, y: last.y };
+    s.needsRender = true;
+  }
+
   function endStroke() {
     var s = st;
     if (!s) { return; }
+    if (s.curveEdit) {
+      s.curveEdit.drag = null;
+      s.needsRender = true;
+      return;
+    }
     if (s.selectDraft) {
       finishSelection(s);
       return;
@@ -4101,14 +5208,28 @@
       s.transform.drag = null;
       return;
     }
+    clearQuickHold();
     if (!s.stroke) { return; }
     var stroke = s.stroke;
     if (stroke.stampCount === 0) {
       ensureSnapshot(s, stroke);
       stampAt(s, stroke.start.x, stroke.start.y, 1, 1, 0);
     }
+    flushStrokeFilters(s, stroke);
+    if (!stroke.quickApplied && s.quickShape &&
+        now() - (stroke.lastMoveAt || stroke.startedAt) >= QUICK_HOLD_MS) {
+      tryQuickShape(s);
+    }
     if (s.strokeBuffer) { commitStrokeBuffer(s); }
     finishHistory(s);
+    s.lastStrokeInfo = {
+      layerId: stroke.layerId,
+      tool: s.tool,
+      points: stroke.points.slice(0),
+      rawPoints: stroke.rawPoints.slice(0),
+      quickType: stroke.quickType || null,
+      startedAt: stroke.startedAt
+    };
     s.stroke = null;
     s.composite = null;
     s.strokeBuffer = null;
@@ -4142,7 +5263,13 @@
   function cancelStroke() {
     var s = st;
     pendingStroke = null;
+    clearQuickHold();
     if (!s) { return; }
+    if (s.curveEdit) {
+      s.curveEdit.drag = null;
+      s.needsRender = true;
+      return;
+    }
     if (s.selectDraft) {
       s.selectDraft = null;
       s.needsRender = true;
@@ -4277,7 +5404,8 @@
     var combined = newDocCanvas(s);
     var g = combined.getContext('2d');
     g.drawImage(s.selection.mask, 0, 0);
-    g.globalCompositeOperation = op === 'subtract' ? 'destination-out' : 'source-over';
+    g.globalCompositeOperation = op === 'subtract' ? 'destination-out' :
+      (op === 'intersect' ? 'destination-in' : 'source-over');
     g.drawImage(mask, 0, 0);
     g.globalCompositeOperation = 'source-over';
     return combined;
@@ -4460,11 +5588,12 @@
 
   function setSelectOp(op) {
     if (!st) { return; }
-    var allowed = { new: true, add: true, subtract: true };
+    var allowed = { new: true, add: true, subtract: true, intersect: true };
     st.selectOp = allowed[op] ? op : 'new';
     ui.toast(st.selectOp === 'add' ? 'Modo añadir: la próxima selección se sumará' :
       (st.selectOp === 'subtract' ? 'Modo restar: la próxima selección se recortará' :
-        'Modo nueva selección'));
+        (st.selectOp === 'intersect' ? 'Modo intersección: solo quedará el área común' :
+          'Modo nueva selección')));
   }
 
   function invertSelection() {
@@ -4582,13 +5711,28 @@
     }
     var src = s.canvases[layer.id];
     if (!src) { return false; }
-    var bounds = contentBounds(src, s.doc.width, s.doc.height);
+    var useSelection = !!s.selection;
+    var bounds = useSelection ? s.selection.bounds :
+      contentBounds(src, s.doc.width, s.doc.height);
     if (!bounds) {
       ui.toast('La capa está vacía; no hay nada que transformar');
       return false;
     }
     var source = newDocCanvas(s);
-    source.getContext('2d').drawImage(src, 0, 0);
+    var sg = source.getContext('2d');
+    sg.drawImage(src, 0, 0);
+    var base = null;
+    if (useSelection) {
+      sg.globalCompositeOperation = 'destination-in';
+      sg.drawImage(s.selection.mask, 0, 0);
+      sg.globalCompositeOperation = 'source-over';
+      base = newDocCanvas(s);
+      var bg = base.getContext('2d');
+      bg.drawImage(src, 0, 0);
+      bg.globalCompositeOperation = 'destination-out';
+      bg.drawImage(s.selection.mask, 0, 0);
+      bg.globalCompositeOperation = 'source-over';
+    }
     var before = null;
     var bytes = s.doc.width * s.doc.height * 4;
     if (bytes * 2 <= model.HISTORY_BYTES * 0.8) {
@@ -4601,6 +5745,9 @@
     s.transform = {
       layerId: layer.id,
       source: source,
+      base: base,
+      selection: useSelection,
+      selectionMask: useSelection ? s.selection.mask : null,
       before: before,
       bounds: bounds,
       tx: 0, ty: 0, scale: 1, rotation: 0,
@@ -4609,7 +5756,9 @@
     };
     setTool('transform');
     s.needsRender = true;
-    ui.toast('Transformar: arrastra para mover; esquinas para escalar; tirador superior para rotar', 3200);
+    ui.toast(useSelection ?
+      'Transformar selección: arrastra para mover; esquinas para escalar; tirador superior para rotar' :
+      'Transformar: arrastra para mover; esquinas para escalar; tirador superior para rotar', 3200);
     return true;
   }
 
@@ -4713,6 +5862,7 @@
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, s.doc.width, s.doc.height);
+    if (t.base) { ctx.drawImage(t.base, 0, 0); }
     var b = t.bounds;
     var cx = b.x + b.w / 2;
     var cy = b.y + b.h / 2;
@@ -4723,6 +5873,10 @@
     ctx.translate(-cx, -cy);
     ctx.drawImage(t.source, 0, 0);
     ctx.restore();
+    if (t.selection) {
+      s.selection = null;
+      s.selectDraft = null;
+    }
 
     if (t.before) {
       pushFullHistory(s, t.layerId, t.before);
@@ -4829,7 +5983,10 @@
       preview: null,
       previewReady: false,
       timer: null,
-      values: { brightness: 0, contrast: 0, saturation: 0, blur: 0, noise: 0 },
+      values: {
+        brightness: 0, contrast: 0, saturation: 0, hue: 0,
+        temperature: 0, sharpen: 0, blur: 0, noise: 0
+      },
       bw: false,
       invert: false
     };
@@ -4863,7 +6020,7 @@
     g.drawImage(a.source, 0, 0);
     var v = a.values;
     var needs = a.bw || a.invert || v.brightness || v.contrast ||
-      v.saturation || v.blur || v.noise;
+      v.saturation || v.hue || v.temperature || v.sharpen || v.blur || v.noise;
     if (!needs) {
       a.previewReady = true;
       s.needsRender = true;
@@ -4885,11 +6042,40 @@
     var conF = (259 * (con + 255)) / (255 * (259 - con));
     var sat = 1 + v.saturation / 100;
     var noise = v.noise * 1.25;
+    var temp = v.temperature * 0.9;
+    var hueRad = (v.hue * Math.PI) / 180;
+    var hc = Math.cos(hueRad);
+    var hs = Math.sin(hueRad);
+    var hm = [
+      0.213 + hc * 0.787 - hs * 0.213,
+      0.715 - hc * 0.715 - hs * 0.715,
+      0.072 - hc * 0.072 + hs * 0.928,
+      0.213 - hc * 0.213 + hs * 0.143,
+      0.715 + hc * 0.285 + hs * 0.140,
+      0.072 - hc * 0.072 - hs * 0.283,
+      0.213 - hc * 0.213 - hs * 0.787,
+      0.715 - hc * 0.715 + hs * 0.715,
+      0.072 + hc * 0.928 + hs * 0.072
+    ];
+    var useHue = Math.abs(v.hue) > 0.01;
     var i;
     for (i = 0; i < data.length; i += 4) {
       var r = data[i];
       var gg = data[i + 1];
       var b = data[i + 2];
+      if (useHue) {
+        var hr = hm[0] * r + hm[1] * gg + hm[2] * b;
+        var hg = hm[3] * r + hm[4] * gg + hm[5] * b;
+        var hb = hm[6] * r + hm[7] * gg + hm[8] * b;
+        r = hr;
+        gg = hg;
+        b = hb;
+      }
+      if (temp) {
+        r += temp;
+        gg += temp * 0.12;
+        b -= temp;
+      }
       r = conF * (r - 128) + 128 + bri;
       gg = conF * (gg - 128) + 128 + bri;
       b = conF * (b - 128) + 128 + bri;
@@ -4915,6 +6101,9 @@
       data[i + 1] = gg;
       data[i + 2] = b;
     }
+    if (v.sharpen > 0) {
+      sharpenData(data, w, h, (v.sharpen / 100) * 1.4);
+    }
     try {
       g.putImageData(img, 0, 0);
     } catch (e2) {
@@ -4923,6 +6112,27 @@
     }
     a.previewReady = true;
     s.needsRender = true;
+  }
+
+  /* Enfoque por máscara de desenfoque (unsharp) con núcleo 3×3. */
+  function sharpenData(data, w, h, amount) {
+    if (amount <= 0 || w < 3 || h < 3) { return; }
+    var src = new Uint8ClampedArray(data);
+    var x;
+    var y;
+    var c;
+    for (y = 1; y < h - 1; y += 1) {
+      for (x = 1; x < w - 1; x += 1) {
+        var i = (y * w + x) * 4;
+        for (c = 0; c < 3; c += 1) {
+          var center = src[i + c];
+          var sum = center * 4 -
+            src[i - 4 + c] - src[i + 4 + c] -
+            src[i - w * 4 + c] - src[i + w * 4 + c];
+          data[i + c] = center + sum * amount * 0.5;
+        }
+      }
+    }
   }
 
   function boxBlur(data, w, h, radius) {
@@ -4976,7 +6186,10 @@
     } else if (name === 'invert') {
       a.invert = !a.invert;
     } else if (name === 'reset') {
-      a.values = { brightness: 0, contrast: 0, saturation: 0, blur: 0, noise: 0 };
+      a.values = {
+        brightness: 0, contrast: 0, saturation: 0, hue: 0,
+        temperature: 0, sharpen: 0, blur: 0, noise: 0
+      };
       a.bw = false;
       a.invert = false;
     }
@@ -5268,32 +6481,684 @@
     return st ? st.dropThreshold : 12;
   }
 
+  function setSymmetry(mode) {
+    if (!st) { return; }
+    var allowed = { off: true, vertical: true, horizontal: true, quad: true };
+    var next = allowed[mode] ? mode : 'off';
+    st.symmetry = next;
+    st.doc.symmetry = next;
+    st.needsRender = true;
+    scheduleSave();
+    ui.toast(next === 'off' ? 'Guía de simetría desactivada' :
+      (next === 'quad' ? 'Simetría en cuadrícula (4 ejes)' :
+        (next === 'vertical' ? 'Simetría vertical' : 'Simetría horizontal')));
+  }
+
+  /* ------------------------------------------------- fusión de capas */
+
+  function mergeUpperInto(s, target, uppers) {
+    var ctx = layerCtx(s, target.id);
+    if (!ctx || !uppers.length) { return false; }
+    var w = s.doc.width;
+    var h = s.doc.height;
+    var before = null;
+    if (w * h * 4 <= model.HISTORY_BYTES * 0.45) {
+      try {
+        before = ctx.getImageData(0, 0, w, h);
+      } catch (e) {
+        PCW.logError('studio:merge-snapshot', e);
+      }
+    }
+    var removed = [];
+    var i;
+    for (i = 0; i < uppers.length; i += 1) {
+      var layer = model.findLayer(s.doc, uppers[i]);
+      if (!layer || layer.id === target.id) { continue; }
+      removed.push({
+        layer: layer,
+        canvas: s.canvases[layer.id] || null,
+        index: model.layerIndex(s.doc, layer.id)
+      });
+    }
+    removed.sort(function (a, b) { return a.index - b.index; });
+    if (!removed.length) { return false; }
+
+    for (i = 0; i < removed.length; i += 1) {
+      if (!removed[i].canvas) { continue; }
+      ctx.save();
+      ctx.globalAlpha = removed[i].layer.opacity;
+      ctx.globalCompositeOperation = removed[i].layer.blend || 'source-over';
+      ctx.drawImage(removed[i].canvas, 0, 0);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+
+    for (i = removed.length - 1; i >= 0; i -= 1) {
+      var id = removed[i].layer.id;
+      model.removeLayer(s.doc, id);
+      delete s.canvases[id];
+      delete s.ctxs[id];
+      delete s.dirty[id];
+      if (s.removedLayerIds.indexOf(id) < 0) { s.removedLayerIds.push(id); }
+      purgeLayerHistory(s, id);
+    }
+    s.doc.activeLayerId = target.id;
+    s.activeLayerId = target.id;
+    s.dirty[target.id] = true;
+    s.dirtyGen += 1;
+    s.needsRender = true;
+
+    if (before) {
+      var entry = {
+        type: 'structure',
+        layerId: target.id,
+        bytes: before.data.length,
+        apply: function (isRedo) {
+          var tctx = layerCtx(s, target.id);
+          if (!tctx) { return false; }
+          var j;
+          if (!isRedo) {
+            try {
+              tctx.putImageData(before, 0, 0);
+            } catch (e2) {
+              PCW.logError('studio:merge-undo', e2);
+              return false;
+            }
+            for (j = 0; j < removed.length; j += 1) {
+              var r = removed[j];
+              if (model.layerIndex(s.doc, r.layer.id) < 0) {
+                var at = Math.min(r.index, s.doc.layers.length);
+                s.doc.layers.splice(at, 0, r.layer);
+              }
+              if (r.canvas) {
+                s.canvases[r.layer.id] = r.canvas;
+                s.ctxs[r.layer.id] = r.canvas.getContext('2d');
+              }
+              s.dirty[r.layer.id] = true;
+              var k = s.removedLayerIds.indexOf(r.layer.id);
+              if (k >= 0) { s.removedLayerIds.splice(k, 1); }
+            }
+          } else {
+            for (j = removed.length - 1; j >= 0; j -= 1) {
+              var rr = removed[j];
+              model.removeLayer(s.doc, rr.layer.id);
+              delete s.canvases[rr.layer.id];
+              delete s.ctxs[rr.layer.id];
+              delete s.dirty[rr.layer.id];
+              if (s.removedLayerIds.indexOf(rr.layer.id) < 0) {
+                s.removedLayerIds.push(rr.layer.id);
+              }
+            }
+            tctx.setTransform(1, 0, 0, 1, 0, 0);
+            tctx.clearRect(0, 0, w, h);
+            for (j = 0; j < removed.length; j += 1) {
+              var r2 = removed[j];
+              if (!r2.canvas) { continue; }
+              tctx.save();
+              tctx.globalAlpha = r2.layer.opacity;
+              tctx.globalCompositeOperation = r2.layer.blend || 'source-over';
+              tctx.drawImage(r2.canvas, 0, 0);
+              tctx.restore();
+            }
+          }
+          s.doc.activeLayerId = target.id;
+          s.activeLayerId = target.id;
+          s.dirty[target.id] = true;
+          s.dirtyGen += 1;
+          s.doc.updatedAt = now();
+          s.needsRender = true;
+          if (PCW.panels) { PCW.panels.sync(); }
+          scheduleSave();
+          return true;
+        }
+      };
+      clearRedo(s);
+      s.history.undo.push(entry);
+      s.history.bytes += entry.bytes;
+      trimHistory(s);
+      syncHistoryUi();
+    } else if (!s.historyWarned) {
+      s.historyWarned = true;
+      ui.toast('Capas combinadas; el resultado no cabe en el historial.', 3200);
+    }
+    if (PCW.panels) { PCW.panels.sync(); }
+    scheduleSave();
+    return true;
+  }
+
+  function mergeDown() {
+    if (!st) { return false; }
+    var s = st;
+    var idx = model.layerIndex(s.doc, s.activeLayerId);
+    if (idx <= 0) {
+      ui.toast('No hay ninguna capa debajo');
+      return false;
+    }
+    var upper = s.doc.layers[idx];
+    if (upper.visible === false) {
+      ui.toast('La capa activa está oculta; muéstrala antes de combinar');
+      return false;
+    }
+    var target = s.doc.layers[idx - 1];
+    if (!mergeUpperInto(s, target, [upper.id])) { return false; }
+    ui.toast('Capa combinada hacia abajo');
+    return true;
+  }
+
+  function mergeVisible() {
+    if (!st) { return false; }
+    var s = st;
+    var target = null;
+    var uppers = [];
+    var i;
+    for (i = 0; i < s.doc.layers.length; i += 1) {
+      var layer = s.doc.layers[i];
+      if (layer.visible === false || layer.opacity <= 0) { continue; }
+      if (!target) { target = layer; continue; }
+      uppers.push(layer.id);
+    }
+    if (!target || !uppers.length) {
+      ui.toast('No hay varias capas visibles que combinar');
+      return false;
+    }
+    if (!mergeUpperInto(s, target, uppers)) { return false; }
+    ui.toast('Capas visibles combinadas');
+    return true;
+  }
+
+  /* ------------------------------------------- redimensionar / recortar */
+
+  function applyCanvasResize(nw, nh, opts) {
+    if (!st) { return false; }
+    var s = st;
+    nw = Math.round(nw);
+    nh = Math.round(nh);
+    opts = opts || {};
+    if (!model.validSize(nw, nh)) {
+      ui.toast('Dimensiones fuera de rango (64 a 4096 px)');
+      return false;
+    }
+    var budget = model.budgetFor(nw, nh);
+    if (budget.overBudget) {
+      ui.toast('Ese tamaño supera el presupuesto de 40 MB');
+      return false;
+    }
+    if (budget.maxLayers < s.doc.layers.length) {
+      ui.toast('Con ese tamaño solo caben ' + budget.maxLayers + ' capas; reduce capas primero');
+      return false;
+    }
+    var oldW = s.doc.width;
+    var oldH = s.doc.height;
+    if (nw === oldW && nh === oldH) { return true; }
+
+    var drawW = opts.scale ? nw : oldW;
+    var drawH = opts.scale ? nh : oldH;
+    var dx;
+    var dy;
+    if (typeof opts.offsetX === 'number') {
+      dx = -opts.offsetX;
+      dy = -opts.offsetY;
+    } else {
+      var anchor = opts.anchor || 'center';
+      dx = anchor.indexOf('left') >= 0 ? 0 :
+        (anchor.indexOf('right') >= 0 ? nw - drawW : (nw - drawW) / 2);
+      dy = anchor.indexOf('top') >= 0 ? 0 :
+        (anchor.indexOf('bottom') >= 0 ? nh - drawH : (nh - drawH) / 2);
+    }
+    dx = Math.round(dx);
+    dy = Math.round(dy);
+
+    var nextCanvases = {};
+    var nextCtxs = {};
+    var i;
+    for (i = 0; i < s.doc.layers.length; i += 1) {
+      var layer = s.doc.layers[i];
+      var old = s.canvases[layer.id];
+      var nc = document.createElement('canvas');
+      nc.width = nw;
+      nc.height = nh;
+      var g = nc.getContext('2d');
+      if (old) {
+        g.drawImage(old, 0, 0, oldW, oldH, dx, dy, drawW, drawH);
+      }
+      nextCanvases[layer.id] = nc;
+      nextCtxs[layer.id] = g;
+      s.dirty[layer.id] = true;
+    }
+
+    s.canvases = nextCanvases;
+    s.ctxs = nextCtxs;
+    s.doc.width = nw;
+    s.doc.height = nh;
+    s.doc.updatedAt = now();
+    s.doc.thumb = '';
+    s.dirtyGen += 1;
+    s.selection = null;
+    s.selectDraft = null;
+    s.transform = null;
+    s.adjust = null;
+    s.stroke = null;
+    s.strokeBuffer = null;
+    s.strokeBufferCtx = null;
+    s.strokeMasked = null;
+    s.strokeMaskedCtx = null;
+    s.strokeView = null;
+    s.strokeViewCtx = null;
+    s.composite = null;
+    s.smudgePatch = null;
+    s.history = { undo: [], redo: [], bytes: 0 };
+    syncHistoryUi();
+    fit();
+    s.needsRender = true;
+    scheduleSave();
+    if (PCW.panels) { PCW.panels.sync(); }
+    if (PCW.gallery) { PCW.gallery.refresh(); }
+    return true;
+  }
+
+  function cropToSelection() {
+    if (!st) { return false; }
+    var s = st;
+    if (!s.selection) {
+      ui.toast('No hay selección activa');
+      return false;
+    }
+    var b = s.selection.bounds || maskBounds(s.selection.mask, s.doc.width, s.doc.height);
+    if (!b) {
+      ui.toast('La selección está vacía');
+      return false;
+    }
+    if (b.w < model.MIN_SIZE || b.h < model.MIN_SIZE) {
+      ui.toast('La selección es demasiado pequeña (mínimo ' + model.MIN_SIZE + ' px)');
+      return false;
+    }
+    if (!applyCanvasResize(b.w, b.h, { offsetX: b.x, offsetY: b.y })) { return false; }
+    ui.toast('Lienzo recortado a la selección');
+    return true;
+  }
+
+  /* --------------------------------------- curvas y edición Bézier */
+
+  /* Copia completa de la capa. finishHistory recorta su propia región a
+     partir de una instantánea de lienzo entero; reutilizar el before de una
+     entrada de historial (ya recortado) corrompería el resultado. */
+  function captureLayerSnapshot(s, layerId) {
+    var ctx = layerCtx(s, layerId);
+    if (!ctx) { return null; }
+    try {
+      return ctx.getImageData(0, 0, s.doc.width, s.doc.height);
+    } catch (e) {
+      PCW.logError('studio:snapshot-temp', e);
+      return null;
+    }
+  }
+
+  function makeTemporaryStroke(info, before) {
+    var pts = info.points || [];
+    var start = pts.length ? { x: pts[0].x, y: pts[0].y } : { x: 0, y: 0 };
+    return {
+      layerId: info.layerId,
+      start: { x: start.x, y: start.y },
+      stampPoint: { x: start.x, y: start.y },
+      bounds: { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity },
+      stampCount: 0,
+      points: pts,
+      rawPoints: pts,
+      before: before,
+      quickApplied: false,
+      snapshotReady: true,
+      noHistory: false,
+      lastPressure: 0.5,
+      lastMoveAt: now(),
+      startedAt: now()
+    };
+  }
+
+  function curveHit(s, p) {
+    var ce = s.curveEdit;
+    if (!ce) { return null; }
+    var scale = Math.max(0.08, s.view.scale);
+    /* Radio en píxeles de pantalla convertido a coordenadas del lienzo. Se
+       elige el objetivo más cercano: con anclas densas los manejadores
+       quedan a pocos píxeles y una prioridad fija los volvería inalcanzables
+       o, al revés, impediría mover el ancla. */
+    var radius = Math.max(5, 9 / scale);
+    var best = null;
+    var bestDist = Infinity;
+    var i;
+    for (i = ce.anchors.length - 1; i >= 0; i -= 1) {
+      var a = ce.anchors[i];
+      var da = model.distance(p, a);
+      if (da <= radius && da < bestDist) {
+        bestDist = da;
+        best = { kind: 'anchor', index: i };
+      }
+      var din = model.distance(p, { x: a.inX, y: a.inY });
+      if (din <= radius && din < bestDist) {
+        bestDist = din;
+        best = { kind: 'in', index: i };
+      }
+      var dout = model.distance(p, { x: a.outX, y: a.outY });
+      if (dout <= radius && dout < bestDist) {
+        bestDist = dout;
+        best = { kind: 'out', index: i };
+      }
+    }
+    return best;
+  }
+
+  function beginCurveDrag(s, p) {
+    var hit = curveHit(s, p);
+    if (!hit) { return false; }
+    s.curveEdit.drag = hit;
+    s.needsRender = true;
+    return true;
+  }
+
+  function updateCurveDrag(s, p) {
+    var ce = s.curveEdit;
+    if (!ce || !ce.drag) { return; }
+    var a = ce.anchors[ce.drag.index];
+    if (!a) { return; }
+    if (ce.drag.kind === 'anchor') {
+      var dx = p.x - a.x;
+      var dy = p.y - a.y;
+      a.x = p.x;
+      a.y = p.y;
+      a.inX += dx;
+      a.inY += dy;
+      a.outX += dx;
+      a.outY += dy;
+    } else if (ce.drag.kind === 'in') {
+      a.inX = p.x;
+      a.inY = p.y;
+    } else {
+      a.outX = p.x;
+      a.outY = p.y;
+    }
+    s.needsRender = true;
+  }
+
+  function startCurveEdit() {
+    var s = st;
+    if (!s) { return false; }
+    if (s.curveEdit) {
+      ui.toast('Ya hay una curva en edición');
+      return false;
+    }
+    if (!s.curveRecognition) {
+      ui.toast('El reconocimiento de curvas está desactivado');
+      return false;
+    }
+    var info = s.lastStrokeInfo;
+    if (!info) {
+      ui.toast('Dibuja un trazo antes de editarlo');
+      return false;
+    }
+    var entry = s.history.undo[s.history.undo.length - 1];
+    if (!entry || entry.layerId !== info.layerId || !entry.before) {
+      ui.toast('El último trazo ya no se puede editar');
+      return false;
+    }
+    var b = model.pointBounds(info.points);
+    var diag = b ? Math.sqrt(b.w * b.w + b.h * b.h) : 100;
+    var epsilon = Math.max(3.5, s.size * 0.4, diag * 0.015);
+    var curve = model.curveForPoints(info.points, { epsilon: epsilon, steps: 10 });
+    /* Demasiadas anclas hacen imposible tocar un manejador con el dedo.
+       Se relaja la simplificación hasta dejar una densidad editable. */
+    var guard = 0;
+    while (curve && curve.anchors.length > 24 && guard < 6) {
+      epsilon *= 1.7;
+      curve = model.curveForPoints(info.points, { epsilon: epsilon, steps: 10 });
+      guard += 1;
+    }
+    if (!curve || curve.anchors.length < 2) {
+      ui.toast('No se pudo crear una curva editable');
+      return false;
+    }
+    if (!undo()) {
+      ui.toast('No se pudo preparar la edición');
+      return false;
+    }
+    var snapshot = captureLayerSnapshot(s, info.layerId);
+    if (!snapshot) {
+      if (s.history.redo.length) { redo(); }
+      ui.toast('No se pudo preparar la edición');
+      return false;
+    }
+    s.curveEdit = {
+      layerId: info.layerId,
+      tool: info.tool || 'brush',
+      before: snapshot,
+      anchors: curve.anchors,
+      closed: curve.closed,
+      drag: null
+    };
+    s.needsRender = true;
+    if (PCW.panels && PCW.panels.openCurveEdit) { PCW.panels.openCurveEdit(); }
+    ui.toast('Edita las anclas y los manejadores; luego Aplicar', 3200);
+    return true;
+  }
+
+  function applyCurveEdit() {
+    var s = st;
+    if (!s || !s.curveEdit) { return false; }
+    var ce = s.curveEdit;
+    var sampled = model.sampleBezier(ce.anchors, ce.closed, 10);
+    if (sampled.length < 2) {
+      ui.toast('La curva está vacía');
+      return false;
+    }
+    var before = ce.before;
+    var stroke = makeTemporaryStroke({
+      layerId: ce.layerId,
+      points: sampled
+    }, before);
+    var previousTool = s.tool;
+    s.tool = ce.tool;
+    s.stroke = stroke;
+    var spacing = Math.max(0.8, s.size * (s.brush.spacing || 0.1));
+    var i;
+    for (i = 0; i < sampled.length - 1; i += 1) {
+      stampPathSegment(s, sampled[i], sampled[i + 1], spacing);
+    }
+    if (ce.closed && sampled.length > 2) {
+      stampPathSegment(s, sampled[sampled.length - 1], sampled[0], spacing);
+    }
+    stroke.quickApplied = true;
+    stroke.quickType = 'curve';
+    finishHistory(s);
+    s.lastStrokeInfo = {
+      layerId: ce.layerId,
+      tool: ce.tool,
+      points: sampled,
+      rawPoints: sampled,
+      quickType: 'curve',
+      startedAt: now()
+    };
+    s.stroke = null;
+    s.curveEdit = null;
+    s.tool = previousTool;
+    markDirty(s, ce.layerId);
+    s.needsRender = true;
+    syncHistoryUi();
+    if (PCW.panels) {
+      PCW.panels.closeCurveEdit();
+      PCW.panels.sync();
+    }
+    ui.toast('Curva aplicada');
+    return true;
+  }
+
+  function cancelCurveEdit() {
+    var s = st;
+    if (!s || !s.curveEdit) { return false; }
+    s.curveEdit = null;
+    s.stroke = null;
+    s.needsRender = true;
+    if (s.history.redo.length) { redo(); }
+    if (PCW.panels) {
+      PCW.panels.closeCurveEdit();
+      PCW.panels.sync();
+    }
+    ui.toast('Edición de curva cancelada');
+    return true;
+  }
+
+  function correctLastShape() {
+    var s = st;
+    if (!s) { return false; }
+    var info = s.lastStrokeInfo;
+    if (!info) {
+      ui.toast('Dibuja un trazo antes de corregirlo');
+      return false;
+    }
+    var entry = s.history.undo[s.history.undo.length - 1];
+    if (!entry || entry.layerId !== info.layerId || !entry.before) {
+      ui.toast('El último trazo ya no se puede corregir');
+      return false;
+    }
+    var shape = model.quickShapeForPoints(info.points, s.size);
+    if (!shape) {
+      ui.toast('No se reconoce una forma geométrica');
+      return false;
+    }
+    if (!undo()) { return false; }
+    var snapshot = captureLayerSnapshot(s, info.layerId);
+    if (!snapshot) {
+      if (s.history.redo.length) { redo(); }
+      ui.toast('No se pudo corregir la forma');
+      return false;
+    }
+    var stroke = makeTemporaryStroke(info, snapshot);
+    var previousTool = s.tool;
+    s.tool = info.tool || 'brush';
+    s.stroke = stroke;
+    var ok = applyShapeToStroke(s, shape);
+    s.tool = previousTool;
+    if (!ok) {
+      s.stroke = null;
+      if (s.history.redo.length) { redo(); }
+      ui.toast('No se pudo corregir la forma');
+      return false;
+    }
+    stroke.quickApplied = true;
+    finishHistory(s);
+    s.lastStrokeInfo = {
+      layerId: info.layerId,
+      tool: info.tool || 'brush',
+      points: stroke.points,
+      rawPoints: stroke.rawPoints,
+      quickType: shape.type,
+      startedAt: now()
+    };
+    s.stroke = null;
+    markDirty(s, info.layerId);
+    s.needsRender = true;
+    syncHistoryUi();
+    if (PCW.panels) { PCW.panels.sync(); }
+    ui.toast('Forma corregida: ' + shapeLabel(shape));
+    return true;
+  }
+
+  function setQuickShape(on) {
+    if (!st) { return; }
+    st.quickShape = !!on;
+    writeBoolPref(QUICK_PREF_KEY, st.quickShape);
+    if (!st.quickShape) { clearQuickHold(); }
+    if (PCW.panels && PCW.panels.syncQuickShape) { PCW.panels.syncQuickShape(); }
+    ui.toast(st.quickShape ?
+      'QuickShape activado: mantén el dedo al final del trazo' :
+      'QuickShape desactivado');
+  }
+
+  function getQuickShape() {
+    return st ? !!st.quickShape : readQuickShapePref();
+  }
+
+  function setCurveRecognition(on) {
+    if (!st) { return; }
+    st.curveRecognition = !!on;
+    writeBoolPref(CURVE_PREF_KEY, st.curveRecognition);
+    if (PCW.panels && PCW.panels.syncQuickShape) { PCW.panels.syncQuickShape(); }
+    ui.toast(st.curveRecognition ?
+      'Reconocimiento de curvas activado' :
+      'Reconocimiento de curvas desactivado');
+  }
+
+  function getCurveRecognition() {
+    return st ? !!st.curveRecognition : readCurvePref();
+  }
+
   function openCanvasSettings() {
     if (!st) { return; }
     var s = st;
     var esc = util.escapeHtml;
+    var anchors = [
+      { id: 'top-left', label: 'Arriba izquierda' },
+      { id: 'top', label: 'Arriba' },
+      { id: 'top-right', label: 'Arriba derecha' },
+      { id: 'left', label: 'Izquierda' },
+      { id: 'center', label: 'Centro' },
+      { id: 'right', label: 'Derecha' },
+      { id: 'bottom-left', label: 'Abajo izquierda' },
+      { id: 'bottom', label: 'Abajo' },
+      { id: 'bottom-right', label: 'Abajo derecha' }
+    ];
+    var anchorHtml = '';
+    var ai;
+    for (ai = 0; ai < anchors.length; ai += 1) {
+      anchorHtml += '<option value="' + anchors[ai].id + '"' +
+        (anchors[ai].id === 'center' ? ' selected' : '') + '>' +
+        anchors[ai].label + '</option>';
+    }
     ui.modal({
       title: 'Configuración del lienzo',
-      width: 420,
+      width: 430,
       body: '<label class="field"><span class="field-label" style="display:block;margin-bottom:6px;color:#9a9aa3;font-size:11px;">Nombre</span>' +
         '<input id="canvas-name" class="input" type="text" value="' + esc(s.doc.name) + '" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>' +
         '<label class="field" style="display:block;margin-top:12px"><span class="field-label" style="display:block;margin-bottom:6px;color:#9a9aa3;font-size:11px;">Color de fondo</span>' +
         '<input id="canvas-bg" class="input" type="text" value="' + esc(s.doc.background || '#ffffff') + '" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></label>' +
+        '<div style="display:flex;margin-top:12px;">' +
+        '<label class="field" style="flex:1;margin-right:8px;"><span class="field-label" style="display:block;margin-bottom:6px;color:#9a9aa3;font-size:11px;">Anchura</span>' +
+        '<input id="canvas-width" class="input" type="number" min="64" max="4096" value="' + s.doc.width + '"></label>' +
+        '<label class="field" style="flex:1;"><span class="field-label" style="display:block;margin-bottom:6px;color:#9a9aa3;font-size:11px;">Altura</span>' +
+        '<input id="canvas-height" class="input" type="number" min="64" max="4096" value="' + s.doc.height + '"></label>' +
+        '</div>' +
+        '<label class="field" style="display:block;margin-top:12px"><span class="field-label" style="display:block;margin-bottom:6px;color:#9a9aa3;font-size:11px;">Anclaje al cambiar el tamaño</span>' +
+        '<select id="canvas-anchor" class="select">' + anchorHtml + '</select></label>' +
+        '<label class="field" style="display:flex;align-items:center;margin-top:12px;color:#c7c7cc;font-size:12px;">' +
+        '<input id="canvas-scale" type="checkbox" style="margin-right:8px;"> Escalar el contenido al nuevo tamaño</label>' +
         '<p class="form-note">Dimensiones actuales: ' + s.doc.width + ' × ' + s.doc.height +
-        '. Cambiar el tamaño no está disponible en esta versión.</p>',
+        '. Redimensionar cambia el lienzo de todas las capas y reinicia el historial. Para recortar a una zona, usa «Recortar a selección» en Acciones.</p>',
       focus: '#canvas-name',
       buttons: [
         { label: 'Cancelar' },
         {
-          label: 'Guardar',
+          label: 'Aplicar',
           primary: true,
           onClick: function () {
             var nameEl = dom.id('canvas-name');
             var bgEl = dom.id('canvas-bg');
+            var wEl = dom.id('canvas-width');
+            var hEl = dom.id('canvas-height');
+            var anchorEl = dom.id('canvas-anchor');
+            var scaleEl = dom.id('canvas-scale');
             var rgb = util.parseHexColor(bgEl ? bgEl.value : '');
             if (!rgb) {
               ui.toast('Color de fondo inválido; usa #RRGGBB');
               return false;
+            }
+            var nw = parseInt(wEl ? wEl.value : '', 10);
+            var nh = parseInt(hEl ? hEl.value : '', 10);
+            if (nw !== s.doc.width || nh !== s.doc.height) {
+              if (!applyCanvasResize(nw, nh, {
+                anchor: anchorEl ? anchorEl.value : 'center',
+                scale: !!(scaleEl && scaleEl.checked)
+              })) {
+                return false;
+              }
             }
             var name = model.cleanName(nameEl ? nameEl.value : s.doc.name);
             s.doc.name = name;
@@ -5491,6 +7356,25 @@
     return mat.apply(m, points[0].x, points[0].y);
   }
 
+  /* Safari moderno y el Apple Pencil exponen la fuerza del toque en
+     Touch.force. Safari 9 no siempre la ofrece; en ese caso se usa 0.5 y el
+     tamaño no se altera por presión. */
+  function readTouchDynamics(ev) {
+    var touch = ev.touches && ev.touches.length ? ev.touches[0] : null;
+    if (!touch) { return; }
+    if (typeof touch.force === 'number' && touch.force > 0.001) {
+      pointerPressure = util.clamp(touch.force, 0.05, 1);
+    } else {
+      pointerPressure = 0.5;
+    }
+    if (typeof touch.altitudeAngle === 'number') {
+      pointerTiltX = touch.altitudeAngle;
+    }
+    if (typeof touch.azimuthAngle === 'number') {
+      pointerTiltY = touch.azimuthAngle;
+    }
+  }
+
   function beginPendingStroke(p) {
     pendingStroke = null;
     beginStroke(p);
@@ -5500,6 +7384,7 @@
     if (!st) { return; }
     ev.preventDefault();
     lastTouchTime = now();
+    readTouchDynamics(ev);
     var rect = rectOf(viewCanvas);
     var points = pointsFromTouches(ev.touches, rect);
 
@@ -5522,6 +7407,10 @@
     if (points.length === 1 && !gesture && !st.stroke && !st.selectDraft &&
         !(st.transform && st.transform.drag)) {
       var p = documentPoint(points, st);
+      if (st.curveEdit) {
+        beginCurveDrag(st, p);
+        return;
+      }
       if (st.tool === 'eyedropper' || st.tool === 'select' ||
           st.tool === 'transform') {
         beginStroke(p);
@@ -5535,11 +7424,16 @@
     if (!st) { return; }
     ev.preventDefault();
     lastTouchTime = now();
+    readTouchDynamics(ev);
     var rect = rectOf(viewCanvas);
     var points = pointsFromTouches(ev.touches, rect);
     if (gesture) {
       trackGesturePoints(points);
       if (points.length >= 2) { updateGesture(points); }
+      return;
+    }
+    if (st.curveEdit && st.curveEdit.drag && points.length === 1) {
+      updateCurveDrag(st, documentPoint(points, st));
       return;
     }
     if (pendingStroke && points.length === 1) {
@@ -5584,7 +7478,8 @@
       }
       return;
     }
-    if (st.stroke || st.selectDraft || (st.transform && st.transform.drag)) {
+    if (st.stroke || st.selectDraft || (st.transform && st.transform.drag) ||
+        (st.curveEdit && st.curveEdit.drag)) {
       if (!ev.touches || ev.touches.length === 0) { endStroke(); }
     }
   }
@@ -5769,7 +7664,7 @@
       canvases: {},
       ctxs: {},
       activeLayerId: doc.activeLayerId,
-      brush: model.getBrush(doc.brushId || 'pencil-6b'),
+      brush: model.resolveBrush(doc.brushId || 'pencil-6b'),
       size: util.clamp(doc.brushSize || 24, 1, 400),
       opacity: util.clamp(doc.brushOpacity || 85, 1, 100),
       color: doc.color || '#1c1c1e',
@@ -5796,6 +7691,11 @@
       adjust: null,
       adjustTimer: null,
       dropThreshold: 12,
+      symmetry: doc.symmetry || 'off',
+      quickShape: readQuickShapePref(),
+      curveRecognition: readCurvePref(),
+      curveEdit: null,
+      lastStrokeInfo: null,
       strokeBuffer: null,
       strokeBufferCtx: null,
       strokeMasked: null,
@@ -5925,7 +7825,7 @@
 
   function setBrush(brushId, keepSize) {
     if (!st) { return; }
-    var brush = model.getBrush(brushId);
+    var brush = model.resolveBrush(brushId);
     st.brush = brush;
     st.doc.brushId = brush.id;
     st.tool = 'brush';
@@ -5954,6 +7854,95 @@
     st.doc.brushOpacity = st.opacity;
     syncSidebar();
     scheduleSave();
+  }
+
+  /* Estudio de pincel: los ajustes se guardan por pincel y sobreviven al
+     reinicio. «Restablecer» vuelve a los valores de la biblioteca. */
+  var BRUSH_SETTINGS = [
+    { key: 'size', label: 'Tamaño', min: 1, max: 400, scale: 1, unit: 'px' },
+    { key: 'opacity', label: 'Opacidad', min: 1, max: 100, scale: 0.01, unit: '%' },
+    { key: 'hardness', label: 'Dureza', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'spacing', label: 'Espaciado', min: 1, max: 50, scale: 0.01, unit: '%' },
+    { key: 'jitter', label: 'Dispersión lateral', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'scatter', label: 'Dispersión longitudinal', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taper', label: 'Afinado del trazo', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'grain', label: 'Grano', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'streak', label: 'Cerdas / vetas', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'speed', label: 'Grosor por velocidad', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'stabilize', label: 'Estabilización', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'streamline', label: 'Suavizado StreamLine', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'motionFilter', label: 'Filtro de movimiento', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'shapeCorrection', label: 'Corrección geométrica', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'pressure', label: 'Presión del lápiz', min: 0, max: 100, scale: 0.01, unit: '%' }
+  ];
+
+  function brushSettingDef(key) {
+    var i;
+    for (i = 0; i < BRUSH_SETTINGS.length; i += 1) {
+      if (BRUSH_SETTINGS[i].key === key) { return BRUSH_SETTINGS[i]; }
+    }
+    return null;
+  }
+
+  function brushSettingDisplay(key) {
+    if (!st) { return 0; }
+    var b = st.brush;
+    /* Tamaño y opacidad viven en el estado de la herramienta; el resto son
+       parámetros del pincel. La barra lateral y el estudio deben mostrar el
+       mismo valor. */
+    if (key === 'size') { return Math.round(st.size); }
+    if (key === 'opacity') { return Math.round(st.opacity); }
+    return Math.round((b[key] || 0) * 100);
+  }
+
+  function getBrushSettings() {
+    var out = [];
+    var i;
+    for (i = 0; i < BRUSH_SETTINGS.length; i += 1) {
+      out.push({
+        key: BRUSH_SETTINGS[i].key,
+        label: BRUSH_SETTINGS[i].label,
+        min: BRUSH_SETTINGS[i].min,
+        max: BRUSH_SETTINGS[i].max,
+        unit: BRUSH_SETTINGS[i].unit,
+        value: brushSettingDisplay(BRUSH_SETTINGS[i].key)
+      });
+    }
+    return out;
+  }
+
+  function setBrushSetting(key, displayValue) {
+    if (!st) { return; }
+    var def = brushSettingDef(key);
+    if (!def) { return; }
+    var shown = util.clamp(Math.round(displayValue), def.min, def.max);
+    var real = shown * def.scale;
+    model.setBrushOverride(st.brush.id, key, real);
+    st.brush = model.resolveBrush(st.brush.id);
+    if (key === 'size') {
+      st.size = shown;
+      st.doc.brushSize = shown;
+    } else if (key === 'opacity') {
+      st.opacity = shown;
+      st.doc.brushOpacity = shown;
+    }
+    syncSidebar();
+    if (PCW.panels && PCW.panels.syncBrushSettings) { PCW.panels.syncBrushSettings(); }
+    scheduleSave();
+  }
+
+  function resetBrushSettings() {
+    if (!st) { return; }
+    model.clearBrushOverride(st.brush.id);
+    st.brush = model.resolveBrush(st.brush.id);
+    st.size = util.clamp(Math.round(st.brush.size), 1, 400);
+    st.opacity = util.clamp(Math.round(st.brush.opacity * 100), 1, 100);
+    st.doc.brushSize = st.size;
+    st.doc.brushOpacity = st.opacity;
+    syncSidebar();
+    if (PCW.panels && PCW.panels.syncBrushSettings) { PCW.panels.syncBrushSettings(); }
+    scheduleSave();
+    ui.toast('Pincel restablecido');
   }
 
   function setColor(hex, commit) {
@@ -6456,6 +8445,9 @@
     setBrush: setBrush,
     setSize: setSize,
     setOpacity: setOpacity,
+    getBrushSettings: getBrushSettings,
+    setBrushSetting: setBrushSetting,
+    resetBrushSettings: resetBrushSettings,
     setColor: setColor,
     addRecentColor: function (hex) {
       if (!st) { return; }
@@ -6480,6 +8472,21 @@
     duplicateLayer: duplicateLayer,
     removeLayer: removeLayer,
     moveLayer: moveLayer,
+    mergeDown: mergeDown,
+    mergeVisible: mergeVisible,
+    applyCanvasResize: applyCanvasResize,
+    cropToSelection: cropToSelection,
+    setSymmetry: setSymmetry,
+    getSymmetry: function () { return st ? (st.symmetry || 'off') : 'off'; },
+    setQuickShape: setQuickShape,
+    getQuickShape: getQuickShape,
+    setCurveRecognition: setCurveRecognition,
+    getCurveRecognition: getCurveRecognition,
+    correctLastShape: correctLastShape,
+    startCurveEdit: startCurveEdit,
+    applyCurveEdit: applyCurveEdit,
+    cancelCurveEdit: cancelCurveEdit,
+    hasCurveEdit: function () { return !!(st && st.curveEdit); },
     setActiveLayer: setActiveLayer,
     setLayerVisible: setLayerVisible,
     setLayerOpacity: setLayerOpacity,
@@ -6708,6 +8715,8 @@
     renderLayers();
     syncColor();
     if (ui.isPanelOpen('panel-brushes')) { renderBrushes(); }
+    if (ui.isPanelOpen('panel-brush-settings')) { renderBrushSettings(); }
+    syncQuickShape();
   }
 
   /* ---------------------------------------------------------------- color */
@@ -6978,7 +8987,7 @@
         item.appendChild(canvasEl);
         item.appendChild(dom.create('span', '', b.name));
         grid.appendChild(item);
-        PCW.paint.preview(canvasEl, b);
+        PCW.paint.preview(canvasEl, model.resolveBrush(b.id));
       }(brush));
     }
   }
@@ -6995,6 +9004,116 @@
     }
     PCW.studio.setTool('brush');
     openBrushes();
+  }
+
+  function renderBrushSettings() {
+    var body = dom.id('brush-settings-body');
+    var title = dom.id('brush-settings-title');
+    var s = studioState();
+    if (!body || !s) { return; }
+    dom.empty(body);
+    if (title) { title.textContent = 'Ajustar: ' + s.brush.name; }
+    var list = PCW.studio.getBrushSettings();
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      (function (item) {
+        var label = dom.create('label', 'row-label');
+        label.appendChild(document.createTextNode(item.label + ' '));
+        var out = dom.create('span', '', String(item.value) + item.unit);
+        out.setAttribute('data-brush-value', item.key);
+        label.appendChild(out);
+        var input = dom.create('input', 'range');
+        input.type = 'range';
+        input.min = String(item.min);
+        input.max = String(item.max);
+        input.value = String(item.value);
+        input.setAttribute('data-brush-setting', item.key);
+        dom.on(input, 'input', function () {
+          var v = parseInt(input.value, 10);
+          out.textContent = String(v) + item.unit;
+          PCW.studio.setBrushSetting(item.key, v);
+        });
+        label.appendChild(input);
+        body.appendChild(label);
+      }(list[i]));
+    }
+
+    var assist = dom.create('div', 'assist-toggles');
+    var qsRow = dom.create('label', 'assist-row');
+    var qs = dom.create('input');
+    qs.type = 'checkbox';
+    qs.id = 'brush-quickshape';
+    qs.checked = !!s.quickShape;
+    qsRow.appendChild(qs);
+    qsRow.appendChild(document.createTextNode(' QuickShape al mantener el dedo'));
+    assist.appendChild(qsRow);
+
+    var curveRow = dom.create('label', 'assist-row');
+    var curve = dom.create('input');
+    curve.type = 'checkbox';
+    curve.id = 'brush-curve-recognition';
+    curve.checked = !!s.curveRecognition;
+    curveRow.appendChild(curve);
+    curveRow.appendChild(document.createTextNode(' Reconocimiento de curvas'));
+    assist.appendChild(curveRow);
+    body.appendChild(assist);
+
+    dom.on(qs, 'change', function () {
+      PCW.studio.setQuickShape(qs.checked);
+    });
+    dom.on(curve, 'change', function () {
+      PCW.studio.setCurveRecognition(curve.checked);
+    });
+  }
+
+  function syncQuickShape() {
+    var s = studioState();
+    if (!s) { return; }
+    var qs = dom.id('brush-quickshape');
+    if (qs) { qs.checked = !!s.quickShape; }
+    var curve = dom.id('brush-curve-recognition');
+    if (curve) { curve.checked = !!s.curveRecognition; }
+    var qsLabel = dom.id('btn-quickshape');
+    if (qsLabel) {
+      qsLabel.textContent = 'QuickShape: ' + (s.quickShape ? 'Activado' : 'Desactivado');
+    }
+    var curveLabel = dom.id('btn-curve-recognition');
+    if (curveLabel) {
+      curveLabel.textContent = 'Reconocer curvas: ' +
+        (s.curveRecognition ? 'Activado' : 'Desactivado');
+    }
+  }
+
+  function openCurveEdit() {
+    ui.openPanel('panel-curve-edit');
+  }
+
+  function closeCurveEdit() {
+    ui.closePanel('panel-curve-edit');
+  }
+
+  function openBrushSettings() {
+    var s = studioState();
+    if (!s) { return; }
+    ui.openPanel('panel-brush-settings');
+    renderBrushSettings();
+  }
+
+  function syncBrushSettings() {
+    if (!ui.isPanelOpen('panel-brush-settings')) { return; }
+    var s = studioState();
+    if (!s) { return; }
+    var list = PCW.studio.getBrushSettings();
+    var i;
+    for (i = 0; i < list.length; i += 1) {
+      var key = list[i].key;
+      var input = dom.qs('[data-brush-setting="' + key + '"]');
+      var out = dom.qs('[data-brush-value="' + key + '"]');
+      if (input) { input.value = String(list[i].value); }
+      if (out) { out.textContent = String(list[i].value) + list[i].unit; }
+    }
+    var title = dom.id('brush-settings-title');
+    if (title) { title.textContent = 'Ajustar: ' + s.brush.name; }
   }
 
   /* -------------------------------------------------------------- acciones */
@@ -7087,6 +9206,9 @@
       brightness: 'adj-brightness',
       contrast: 'adj-contrast',
       saturation: 'adj-saturation',
+      hue: 'adj-hue',
+      temperature: 'adj-temperature',
+      sharpen: 'adj-sharpen',
       blur: 'adj-blur',
       noise: 'adj-noise'
     };
@@ -7151,6 +9273,41 @@
     else if (action === 'fill-layer') { PCW.studio.fillLayer(); }
     else if (action === 'fill-selection') { PCW.studio.fillSelection(); }
     else if (action === 'clear-layer') { PCW.studio.clearActiveLayer(); }
+    else if (action === 'merge-down') {
+      ui.closeAll();
+      if (PCW.studio.mergeDown()) { ui.toast('Capa combinada'); }
+      return;
+    }
+    else if (action === 'merge-visible') {
+      ui.closeAll();
+      if (PCW.studio.mergeVisible()) { ui.toast('Capas visibles combinadas'); }
+      return;
+    }
+    else if (action === 'crop-selection') {
+      ui.closeAll();
+      PCW.studio.cropToSelection();
+      return;
+    }
+    else if (action === 'correct-shape') {
+      ui.closeAll();
+      PCW.studio.correctLastShape();
+      return;
+    }
+    else if (action === 'edit-curve') {
+      ui.closeAll();
+      PCW.studio.startCurveEdit();
+      return;
+    }
+    else if (action === 'toggle-quickshape') {
+      PCW.studio.setQuickShape(!PCW.studio.getQuickShape());
+      syncQuickShape();
+      return;
+    }
+    else if (action === 'toggle-curve') {
+      PCW.studio.setCurveRecognition(!PCW.studio.getCurveRecognition());
+      syncQuickShape();
+      return;
+    }
     else if (action === 'canvas-settings') {
       ui.closeAll();
       PCW.studio.openCanvasSettings();
@@ -7236,6 +9393,7 @@
 
     dom.on(dom.id('btn-brush'), 'click', toggleBrushes);
     dom.on(dom.id('btn-actions'), 'click', function () {
+      syncQuickShape();
       ui.togglePanel('popover-actions');
     });
     dom.on(dom.id('btn-adjustments'), 'click', function () {
@@ -7350,8 +9508,29 @@
       var id = item.getAttribute('data-brush');
       PCW.studio.setBrush(id, false);
       ui.closePanel('panel-brushes');
-      ui.toast('Pincel: ' + model.getBrush(id).name);
+      ui.toast('Pincel: ' + model.resolveBrush(id).name);
     });
+    var brushStudio = dom.id('btn-brush-studio');
+    if (brushStudio) { dom.on(brushStudio, 'click', openBrushSettings); }
+    var brushReset = dom.id('btn-brush-reset');
+    if (brushReset) {
+      dom.on(brushReset, 'click', function () {
+        PCW.studio.resetBrushSettings();
+        renderBrushSettings();
+      });
+    }
+    var brushDone = dom.id('btn-brush-done');
+    if (brushDone) {
+      dom.on(brushDone, 'click', function () { ui.closePanel('panel-brush-settings'); });
+    }
+    var curveApply = dom.id('btn-curve-apply');
+    if (curveApply) {
+      dom.on(curveApply, 'click', function () { PCW.studio.applyCurveEdit(); });
+    }
+    var curveCancel = dom.id('btn-curve-cancel');
+    if (curveCancel) {
+      dom.on(curveCancel, 'click', function () { PCW.studio.cancelCurveEdit(); });
+    }
 
     dom.on(dom.id('quick-menu'), 'click', function (ev) {
       var item = findUp(ev.target, 'data-quick');
@@ -7359,6 +9538,12 @@
     });
 
     dom.on(dom.id('popover-actions'), 'click', function (ev) {
+      var sym = findUp(ev.target, 'data-symmetry');
+      if (sym) {
+        PCW.studio.setSymmetry(sym.getAttribute('data-symmetry'));
+        ui.closeAll();
+        return;
+      }
       var item = findUp(ev.target, 'data-action');
       if (item) { doAction(item.getAttribute('data-action')); }
     });
@@ -7386,7 +9571,8 @@
       });
     }
 
-    var adjSliders = ['brightness', 'contrast', 'saturation', 'blur', 'noise'];
+    var adjSliders = ['brightness', 'contrast', 'saturation', 'hue',
+      'temperature', 'sharpen', 'blur', 'noise'];
     for (i = 0; i < adjSliders.length; i += 1) {
       (function (key) {
         var el = dom.id('adj-' + key);
@@ -7487,7 +9673,11 @@
     openLayers: openLayers,
     openColor: openColor,
     openBrushes: openBrushes,
-    renderBrushes: renderBrushes
+    renderBrushes: renderBrushes,
+    syncQuickShape: syncQuickShape,
+    openCurveEdit: openCurveEdit,
+    closeCurveEdit: closeCurveEdit,
+    syncBrushSettings: syncBrushSettings
   };
 
 })(typeof window !== 'undefined' ? window : this);
