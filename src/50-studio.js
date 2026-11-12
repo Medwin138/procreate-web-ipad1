@@ -242,6 +242,49 @@
     return pts;
   }
 
+  /* ---------------------------------------------------------------- trazo */
+
+  /* Perfil de afinado propio: 0 en la punta, 1 en el cuerpo. «Forma de punta»
+     agudiza o redondea la transición sin cambiar el diámetro del pincel. */
+  function taperCurve(progress, tip) {
+    var p = util.clamp(progress, 0, 1);
+    var eased = p * p * (3 - 2 * p);
+    var sharp = 1 + util.clamp(tip == null ? 0.35 : tip, 0, 1) * 1.6;
+    return Math.pow(eased, sharp);
+  }
+
+  function taperLengthFor(s) {
+    var length = s.brush.taperLength == null ? 0.35 : s.brush.taperLength;
+    var factor = 0.6 + util.clamp(length, 0, 1) * 4.4;
+    return Math.max(2, s.size * factor);
+  }
+
+  /* La presión y la velocidad del punto modulan la profundidad del afinado.
+     En Safari 9 la presión es neutra y manda la velocidad (afinado táctil). */
+  function taperDepthFor(s, depth, pressure, speedNorm) {
+    var d = util.clamp(depth, 0, 1);
+    if (d <= 0.001) { return 0; }
+    var press = s.brush.taperPressure == null ? 0.5 : s.brush.taperPressure;
+    var touch = s.brush.taperTouch == null ? 0.5 : s.brush.taperTouch;
+    var pr = util.clamp(pressure == null ? 0.5 : pressure, 0, 1);
+    var sp = util.clamp(speedNorm == null ? 0 : speedNorm, 0, 1);
+    var scale = 1;
+    if (press > 0.001) { scale *= 1 + press * (0.5 - pr) * 0.8; }
+    if (touch > 0.001) { scale *= 1 + touch * (sp - 0.5) * 0.8; }
+    return util.clamp(d * scale, 0, 1);
+  }
+
+  function taperSizeFactor(depth, curve) {
+    /* Con el afinado al 100 % la punta conserva un 18 % del diámetro: sigue
+       siendo visible, pero termina en punta en lugar de quedar roma. */
+    return 1 - depth * 0.82 * (1 - curve);
+  }
+
+  function taperAlphaFactor(s, curve) {
+    var opacity = s.brush.taperOpacity == null ? 0.3 : s.brush.taperOpacity;
+    return 1 - util.clamp(opacity, 0, 1) * 0.9 * (1 - curve);
+  }
+
   function stampAt(s, x, y, factor, alphaFactor, angle) {
     var stroke = s.stroke;
     if (!stroke) { return; }
@@ -1220,7 +1263,7 @@
       noHistory: false,
       before: null,
       points: [{ x: p.x, y: p.y }],
-      rawPoints: [{ x: p.x, y: p.y, pressure: pointerPressure }],
+      rawPoints: [{ x: p.x, y: p.y, pressure: pointerPressure, speed: 1, speedNorm: 0 }],
       lastMoveAt: now(),
       lastPressure: pointerPressure,
       lastTiltX: pointerTiltX,
@@ -1262,7 +1305,7 @@
     var lastRaw = stroke.rawPoints[stroke.rawPoints.length - 1];
     if (!lastRaw || model.distance(lastRaw, p) >= 1.2) {
       if (stroke.rawPoints.length < 700) {
-        stroke.rawPoints.push({ x: p.x, y: p.y, pressure: pointerPressure });
+        stroke.rawPoints.push({ x: p.x, y: p.y, pressure: pointerPressure, speed: 1, speedNorm: 0 });
       }
       if (stroke.points.length < 700) {
         stroke.points.push({ x: p.x, y: p.y });
@@ -1278,6 +1321,23 @@
       stroke.mf.push({ x: p.x, y: p.y });
       if (stroke.mf.length > windowSize) { stroke.mf.shift(); }
       raw = model.averagePoints(stroke.mf) || p;
+      /* Expresión del filtro: recupera la desviación lenta que la media móvil
+         recorta (curvas amplias y gesto natural), pero no el temblor rápido:
+         solo se reinyecta la media de largo plazo del detalle eliminado. */
+      var expression = s.brush.motionExpression || 0;
+      if (expression > 0.01) {
+        if (!stroke.mfDetail) { stroke.mfDetail = []; }
+        stroke.mfDetail.push({ x: p.x - raw.x, y: p.y - raw.y });
+        var detailWindow = Math.max(6, windowSize * 4);
+        if (stroke.mfDetail.length > detailWindow) { stroke.mfDetail.shift(); }
+        var detail = model.averagePoints(stroke.mfDetail);
+        if (detail) {
+          raw = {
+            x: raw.x + detail.x * expression,
+            y: raw.y + detail.y * expression
+          };
+        }
+      }
     }
 
     /* 2) Estabilización: seguimiento exponencial con retardo controlado. */
@@ -1312,8 +1372,10 @@
     var dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 0.01) { return; }
     var speedFactor = 1;
+    var normSpeed = 0;
     var brushSpeed = s.brush.speed || 0;
-    if (brushSpeed > 0) {
+    var touchTaper = s.brush.taperTouch || 0;
+    if (brushSpeed > 0.001 || touchTaper > 0.001) {
       var stampTime = now();
       if (stroke.lastPoint) {
         var adx = p.x - stroke.lastPoint.x;
@@ -1324,11 +1386,18 @@
         stroke.speedAvg = (stroke.speedAvg == null)
           ? instant
           : (stroke.speedAvg * 0.65 + instant * 0.35);
-        var normSpeed = util.clamp((stroke.speedAvg - 0.5) / 3.5, 0, 1);
-        speedFactor = 1 - brushSpeed * 0.7 * normSpeed;
+        normSpeed = util.clamp((stroke.speedAvg - 0.5) / 3.5, 0, 1);
+        if (brushSpeed > 0.001) {
+          speedFactor = 1 - brushSpeed * 0.7 * normSpeed;
+        }
       }
       stroke.lastPoint = { x: p.x, y: p.y };
       stroke.lastTime = stampTime;
+    }
+    var lastRawPoint = stroke.rawPoints[stroke.rawPoints.length - 1];
+    if (lastRawPoint) {
+      lastRawPoint.speed = speedFactor;
+      lastRawPoint.speedNorm = normSpeed;
     }
     var spacing = Math.max(0.7, s.size * (s.brush.spacing || 0.1));
     if (dist < spacing) { return; }
@@ -1338,6 +1407,7 @@
     var uy = dy / dist;
     var angle = Math.atan2(dy, dx);
     var moved = 0;
+    var taperDist = taperLengthFor(s);
     while (moved + spacing <= dist) {
       moved += spacing;
       var x = from.x + ux * moved;
@@ -1347,15 +1417,11 @@
       var along = (pseudo(stroke.seed + 7, index) - 0.5) * (s.brush.scatter || 0) * s.size;
       var sx = x - uy * lateral + ux * along;
       var sy = y + ux * lateral + uy * along;
-      var factor = 1;
-      var taper = s.brush.taper || 0;
-      if (taper > 0) {
-        var taperDist = Math.max(2, s.size * 2.2);
-        var progress = Math.min(1, (stroke.travel + moved) / taperDist);
-        factor = 0.55 + 0.45 * progress;
-      }
-      factor = factor * speedFactor;
-      var alpha = 1;
+      var progress = Math.min(1, (stroke.travel + moved) / taperDist);
+      var taper = taperCurve(progress, s.brush.taperTip);
+      var depth = taperDepthFor(s, s.brush.taper || 0, pointerPressure, normSpeed);
+      var factor = taperSizeFactor(depth, taper) * speedFactor;
+      var alpha = taperAlphaFactor(s, taper);
       stampAt(s, sx, sy, factor, alpha, angle);
     }
     stroke.travel += moved;
@@ -1514,6 +1580,260 @@
     }, QUICK_HOLD_MS);
   }
 
+  /* ------------------------------------------- suavizado al soltar el trazo */
+
+  /* Expresión del filtro: la curva suave pierde la desviación lenta del gesto
+     (curvas amplias, intención del trazo) junto con el temblor. Aquí se mide
+     esa desviación contra los puntos crudos, se filtra para conservar solo su
+     componente lenta y se reinyecta según el porcentaje. El temblor rápido
+     queda fuera del filtro y no vuelve. */
+  function restoreExpression(s, sampled, raw, amount) {
+    var n = sampled.length;
+    var rn = raw.length;
+    if (n < 3 || rn < 3 || amount <= 0.001) { return sampled; }
+    var residual = [];
+    var ri = 0;
+    var i;
+    var j;
+    for (i = 0; i < n; i += 1) {
+      var q = sampled[i];
+      while (ri + 1 < rn) {
+        var d0 = model.distance(raw[ri], q);
+        var d1 = model.distance(raw[ri + 1], q);
+        if (d1 <= d0) { ri += 1; } else { break; }
+      }
+      residual.push({ x: raw[ri].x - q.x, y: raw[ri].y - q.y });
+    }
+    /* Media móvil: cubre ~24 px reales de trazo. Conserva la ondulación
+       natural de la mano (longitudes de onda de ~50 px o más) y descarta el
+       temblor rápido de 6-11 px, que queda fuera de la ventana. */
+    var span = 0;
+    for (i = 1; i < n; i += 1) {
+      span += model.distance(sampled[i - 1], sampled[i]);
+    }
+    span = (n > 1) ? span / (n - 1) : 1;
+    var window = Math.max(2, Math.round(12 / Math.max(0.25, span)));
+    window = Math.min(window, Math.max(2, Math.floor(n / 4)));
+    var cap = Math.max(1.5, s.size * 0.6);
+    var out = [];
+    for (i = 0; i < n; i += 1) {
+      var lo = Math.max(0, i - window);
+      var hi = Math.min(n - 1, i + window);
+      var sx = 0;
+      var sy = 0;
+      var count = 0;
+      for (j = lo; j <= hi; j += 1) {
+        sx += residual[j].x;
+        sy += residual[j].y;
+        count += 1;
+      }
+      var dx = (sx / count) * amount;
+      var dy = (sy / count) * amount;
+      var mag = Math.sqrt(dx * dx + dy * dy);
+      if (mag > cap) {
+        dx = (dx / mag) * cap;
+        dy = (dy / mag) * cap;
+      }
+      var base = sampled[i];
+      out.push({ x: base.x + dx, y: base.y + dy });
+    }
+    return out;
+  }
+
+  /* Asocia a cada punto de la curva suave la presión y la velocidad capturadas
+     en el punto crudo más cercano. El índice avanza de forma monótona para no
+     recorrer la lista completa en cada muestra. */
+  function strokeMetaForCurve(raw, sampled) {
+    var meta = [];
+    var ri = 0;
+    var n = raw.length;
+    var i;
+    for (i = 0; i < sampled.length; i += 1) {
+      var q = sampled[i];
+      while (ri + 1 < n) {
+        var d0 = model.distance(raw[ri], q);
+        var d1 = model.distance(raw[ri + 1], q);
+        if (d1 <= d0) { ri += 1; } else { break; }
+      }
+      var r = raw[ri] || {};
+      meta.push({
+        pressure: (typeof r.pressure === 'number') ? r.pressure : 0.5,
+        speed: (typeof r.speed === 'number') ? r.speed : 1,
+        speedNorm: (typeof r.speedNorm === 'number') ? r.speedNorm : 0
+      });
+    }
+    return meta;
+  }
+
+  /* Reestampa una polilínea conservando calado, textura determinista,
+     presión y velocidad del pincel. La separación se acumula entre segmentos
+     para que no aparezcan huecos ni dobles sellos en las uniones. */
+  function stampSmoothedPath(s, stroke, points, meta) {
+    if (!points || points.length < 2) { return false; }
+    var spacing = Math.max(0.7, s.size * (s.brush.spacing || 0.1));
+    var taperDist = taperLengthFor(s);
+    var tip = s.brush.taperTip;
+    var startDepth = s.brush.taper || 0;
+    var endDepth = s.brush.taperEnd == null ? startDepth : s.brush.taperEnd;
+    var jitter = s.brush.jitter || 0;
+    var scatter = s.brush.scatter || 0;
+    var totalLength = 0;
+    var travelled = 0;
+    var carry = 0;
+    var stampIndex = 0;
+    var lastX = null;
+    var lastY = null;
+    var i;
+    for (i = 0; i < points.length - 1; i += 1) {
+      totalLength += model.distance(points[i], points[i + 1]);
+    }
+    for (i = 0; i < points.length - 1; i += 1) {
+      var a = points[i];
+      var b = points[i + 1];
+      var dx = b.x - a.x;
+      var dy = b.y - a.y;
+      var len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.001) { continue; }
+      var ux = dx / len;
+      var uy = dy / len;
+      var angle = Math.atan2(dy, dx);
+      var pos = carry;
+      while (pos <= len + 0.001) {
+        var t = util.clamp(pos / len, 0, 1);
+        var x = a.x + dx * t;
+        var y = a.y + dy * t;
+        /* Evita repetir el sello exacto en la unión de dos segmentos: la
+           opacidad se acumularía y dejaría puntos más oscuros. */
+        if (lastX == null || Math.abs(x - lastX) > 0.01 ||
+            Math.abs(y - lastY) > 0.01) {
+          var ma = meta[i] || { pressure: 0.5, speed: 1, speedNorm: 0 };
+          var mb = meta[i + 1] || ma;
+          var pressure = ma.pressure + (mb.pressure - ma.pressure) * t;
+          var pointSpeed = ma.speed + (mb.speed - ma.speed) * t;
+          var speedNorm = ma.speedNorm + (mb.speedNorm - ma.speedNorm) * t;
+          stroke.lastPressure = pressure;
+          var lateral = (pseudo(stroke.seed, stampIndex) - 0.5) * jitter * s.size;
+          var along = (pseudo(stroke.seed + 7, stampIndex) - 0.5) * scatter * s.size;
+          var sx = x - uy * lateral + ux * along;
+          var sy = y + ux * lateral + uy * along;
+          var distance = travelled + pos;
+          var startCurve = taperCurve(distance / taperDist, tip);
+          var endCurve = taperCurve((totalLength - distance) / taperDist, tip);
+          var depthStart = taperDepthFor(s, startDepth, pressure, speedNorm);
+          var depthEnd = taperDepthFor(s, endDepth, pressure, speedNorm);
+          var factor = taperSizeFactor(depthStart, startCurve) *
+            taperSizeFactor(depthEnd, endCurve) * pointSpeed;
+          var alpha = taperAlphaFactor(s, startCurve) *
+            taperAlphaFactor(s, endCurve);
+          stampAt(s, sx, sy, factor, alpha, angle);
+          lastX = x;
+          lastY = y;
+          stampIndex += 1;
+        }
+        if (pos >= len) { break; }
+        pos += spacing;
+      }
+      carry = pos - len;
+      travelled += len;
+    }
+    /* Si todos los segmentos eran degenerados, deja al menos un sello. */
+    if (stampIndex === 0) {
+      stampAt(s, points[0].x, points[0].y, 1, 1, 0);
+      stampIndex = 1;
+    }
+    stroke.stampPoint = { x: points[points.length - 1].x, y: points[points.length - 1].y };
+    stroke.travel = travelled;
+    return stampIndex > 0;
+  }
+
+  /* Suavizado posterior al soltar: reconstruye el trazo sobre una curva
+     Catmull-Rom que conserva la intención del dibujo (también las curvas
+     amplias) y elimina el temblor de alta frecuencia que los filtros en vivo
+     no alcanzan. Reutiliza el snapshot inicial, así que el deshacer sigue
+     funcionando. Aunque no haya filtros, reestampa para aplicar el afinado
+     final y la opacidad de las puntas. */
+  function smoothStrokeOnRelease(s, stroke) {
+    if (!stroke || stroke.quickApplied) { return false; }
+    if (s.tool !== 'brush' && s.tool !== 'eraser') { return false; }
+    var raw = stroke.rawPoints;
+    if (!raw || raw.length < 5 || stroke.stampCount < 1) { return false; }
+    var strength = Math.max(
+      s.brush.stabilize || 0,
+      s.brush.streamline || 0,
+      (s.brush.motionFilter || 0) * 0.5
+    );
+    var endTaper = s.brush.taperEnd == null ?
+      (s.brush.taper || 0) : s.brush.taperEnd;
+    var opacityTaper = s.brush.taperOpacity == null ? 0.3 : s.brush.taperOpacity;
+    var doSmooth = strength > 0.02;
+    var needsTaper = (s.brush.taper || 0) > 0.01 ||
+      endTaper > 0.01 || opacityTaper > 0.01;
+    if (!doSmooth && !needsTaper) { return false; }
+    var rawLength = model.pathLength(raw);
+    if (rawLength < Math.max(8, s.size * 0.9)) { return false; }
+    var sampled;
+    if (doSmooth) {
+      /* La expresión pertenece al Filtro de movimiento: solo se aplica si
+         dicho filtro está activo. 0 = máximo suavizado; 100 = máxima
+         naturalidad. */
+      var motionExpression = (s.brush.motionFilter || 0) > 0.01
+        ? util.clamp(s.brush.motionExpression == null ? 0.45 : s.brush.motionExpression, 0, 1)
+        : 0;
+      /* Prefiltro sobre los puntos crudos (espaciado ~1,2 px): elimina el
+         temblor de alta frecuencia antes de ajustar la curva. Conserva los
+         extremos y la forma general, incluidas las curvas amplias. La
+         expresión NO debilita este filtro: solo reinyecta después su
+         componente lenta, de modo que el temblor nunca vuelve. */
+      var amount = util.clamp(0.32 + strength * 0.55, 0.3, 0.85);
+      var smoothed = model.smoothPoints(raw, amount, 2);
+      var epsilon = Math.max(1, s.size * 0.12) +
+        strength * Math.max(1.5, s.size * 0.35);
+      epsilon = Math.min(epsilon, 8);
+      var curve = model.curveForPoints(smoothed, {
+        epsilon: epsilon,
+        steps: 6,
+        closed: false
+      });
+      if (!curve || !curve.sampled || curve.sampled.length < 2) { return false; }
+      sampled = curve.sampled;
+      /* La expresión recupera además la desviación lenta que el filtro
+         eliminó, sin reinyectar el temblor rápido. */
+      if (motionExpression > 0.01) {
+        sampled = restoreExpression(s, sampled, raw, motionExpression * 0.85);
+      }
+      /* Nunca sustituyas el trazo por una versión mucho más corta: indica que
+         la simplificación se comió parte del dibujo intencional. */
+      if (model.pathLength(sampled) < rawLength * 0.6) { return false; }
+    } else {
+      /* Sin filtros: se conserva la geometría cruda y solo se reestampa para
+         aplicar el afinado de las dos puntas y su opacidad. */
+      sampled = [];
+      for (var r = 0; r < raw.length; r += 1) {
+        sampled.push({ x: raw[r].x, y: raw[r].y });
+      }
+    }
+    /* Protección de rendimiento en iPad: limita muestras manteniendo el final. */
+    if (sampled.length > 1600) {
+      var reduced = [];
+      var step = Math.ceil(sampled.length / 1600);
+      for (var k = 0; k < sampled.length; k += step) { reduced.push(sampled[k]); }
+      var tail = sampled[sampled.length - 1];
+      if (reduced[reduced.length - 1] !== tail) { reduced.push(tail); }
+      sampled = reduced;
+    }
+    if (!clearStrokeForShape(s, stroke)) { return false; }
+    stroke.bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    stroke.stampCount = 0;
+    stroke.travel = 0;
+    var meta = strokeMetaForCurve(raw, sampled);
+    if (!stampSmoothedPath(s, stroke, sampled, meta)) { return false; }
+    /* El editor de curvas parte de los puntos finales, no de los crudos:
+       así no reintroduce el temblor que se acaba de eliminar. */
+    stroke.points = sampled;
+    s.needsRender = true;
+    return true;
+  }
+
   /* Cierra el trazo hasta el último punto crudo aunque el filtro vaya con
      retardo. Evita que un trazo con estabilización alta quede corto. */
   function flushStrokeFilters(s, stroke) {
@@ -1562,6 +1882,7 @@
         now() - (stroke.lastMoveAt || stroke.startedAt) >= QUICK_HOLD_MS) {
       tryQuickShape(s);
     }
+    if (!stroke.quickApplied) { smoothStrokeOnRelease(s, stroke); }
     if (s.strokeBuffer) { commitStrokeBuffer(s); }
     finishHistory(s);
     s.lastStrokeInfo = {
@@ -4207,13 +4528,20 @@
     { key: 'spacing', label: 'Espaciado', min: 1, max: 50, scale: 0.01, unit: '%' },
     { key: 'jitter', label: 'Dispersión lateral', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'scatter', label: 'Dispersión longitudinal', min: 0, max: 100, scale: 0.01, unit: '%' },
-    { key: 'taper', label: 'Afinado del trazo', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taper', label: 'Afinado inicial', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperEnd', label: 'Afinado final', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperLength', label: 'Longitud del afinado', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperOpacity', label: 'Opacidad del afinado', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperPressure', label: 'Afinado por presión', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperTouch', label: 'Afinado táctil', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'taperTip', label: 'Forma de punta', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'grain', label: 'Grano', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'streak', label: 'Cerdas / vetas', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'speed', label: 'Grosor por velocidad', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'stabilize', label: 'Estabilización', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'streamline', label: 'Suavizado StreamLine', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'motionFilter', label: 'Filtro de movimiento', min: 0, max: 100, scale: 0.01, unit: '%' },
+    { key: 'motionExpression', label: 'Expresión del filtro', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'shapeCorrection', label: 'Corrección geométrica', min: 0, max: 100, scale: 0.01, unit: '%' },
     { key: 'pressure', label: 'Presión del lápiz', min: 0, max: 100, scale: 0.01, unit: '%' }
   ];

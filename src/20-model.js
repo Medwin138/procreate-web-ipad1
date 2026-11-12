@@ -338,14 +338,22 @@
     size: true, opacity: true, hardness: true, spacing: true,
     jitter: true, scatter: true, taper: true, grain: true,
     streak: true, speed: true, streamline: true, stabilize: true,
-    motionFilter: true, shapeCorrection: true, pressure: true
+    motionFilter: true, motionExpression: true, shapeCorrection: true, pressure: true,
+    taperEnd: true, taperLength: true, taperOpacity: true,
+    taperPressure: true, taperTouch: true, taperTip: true
   };
   var BRUSH_EXTRA_DEFAULTS = {
     stabilize: 0.18,
     streamline: 0.2,
     motionFilter: 0.2,
+    motionExpression: 0.45,
     shapeCorrection: 1,
-    pressure: 0.35
+    pressure: 0.35,
+    taperLength: 0.35,
+    taperOpacity: 0.3,
+    taperPressure: 0.5,
+    taperTouch: 0.5,
+    taperTip: 0.35
   };
   var brushOverrides = null;
 
@@ -393,6 +401,11 @@
         out[key] = BRUSH_EXTRA_DEFAULTS[key];
       }
     }
+    /* Cada pincel hereda su afinado inicial como afinado final mientras el
+       usuario no configure otro valor en el estudio. */
+    if (typeof out.taperEnd !== 'number') {
+      out.taperEnd = (typeof out.taper === 'number') ? out.taper : 0.5;
+    }
     var store = readBrushStore();
     var override = store[base.id];
     if (override) {
@@ -401,6 +414,12 @@
             BRUSH_OVERRIDE_KEYS[key]) {
           out[key] = override[key];
         }
+      }
+      /* Si el usuario cambia el afinado inicial y aún no ha fijado el final,
+         el final sigue al inicial. */
+      if (typeof override.taper === 'number' &&
+          typeof override.taperEnd !== 'number') {
+        out.taperEnd = out.taper;
       }
     }
     out.id = base.id;

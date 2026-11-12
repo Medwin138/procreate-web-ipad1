@@ -11,8 +11,10 @@ ejecutable en Safari 9.3.5 sobre iPad mini 1 (A5, 512 MB RAM, 1024 × 768).
 > funcionan en Chromium de escritorio. También están implementados ColorDrop, selección
 > (con añadir/restar), transformación, ajustes, bloqueo alfa, configuración del lienzo y
 > una biblioteca propia de 29 pinceles en las 11 categorías nativas. El motor de trazo
-> incorpora estabilización, StreamLine, filtro de movimiento, QuickShape, curvas Bézier
-> editables y corrección de forma a petición. Deshacer y rehacer funcionan por gesto
+> incorpora estabilización, StreamLine, filtro de movimiento, expresión del filtro,
+> suavizado final al soltar, afinado en ambos extremos (Taper), QuickShape, curvas Bézier
+> editables y corrección de forma a petición. Deshacer y rehacer
+> funcionan por gesto
 > (2 y 3 dedos) y por botón de barra o Quick Menu, con tolerancia a temblor y
 > `touchcancel`. La fidelidad visual **no se ha comparado contra Procreate 3.1**. Ver
 > [`docs/08-fase2-shell.md`](docs/08-fase2-shell.md) y

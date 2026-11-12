@@ -227,12 +227,29 @@ ok('los ajustes de pincel se resuelven sin mutar la biblioteca', function () {
   var original = model.getBrush('dry-ink').size;
   var before = model.resolveBrush('dry-ink');
   assert.strictEqual(before.size, original);
+  assert.strictEqual(before.motionExpression, 0.45);
+  assert.strictEqual(before.taperEnd, model.getBrush('dry-ink').taper);
+  assert.strictEqual(before.taperOpacity, 0.3);
   assert.strictEqual(model.setBrushOverride('dry-ink', 'size', 55), true);
   assert.strictEqual(model.resolveBrush('dry-ink').size, 55);
+  assert.strictEqual(model.setBrushOverride('dry-ink', 'motionExpression', 0.8), true);
+  assert.strictEqual(model.resolveBrush('dry-ink').motionExpression, 0.8);
+  assert.strictEqual(model.setBrushOverride('dry-ink', 'taperEnd', 0.2), true);
+  assert.strictEqual(model.resolveBrush('dry-ink').taperEnd, 0.2);
+  assert.strictEqual(model.setBrushOverride('dry-ink', 'taper', 0.4), true);
+  assert.strictEqual(model.resolveBrush('dry-ink').taper, 0.4);
+  assert.strictEqual(model.resolveBrush('dry-ink').taperEnd, 0.2);
+  model.clearBrushOverride('dry-ink');
+  assert.strictEqual(model.setBrushOverride('dry-ink', 'taper', 0.4), true);
+  assert.strictEqual(model.resolveBrush('dry-ink').taperEnd, 0.4);
+  model.clearBrushOverride('dry-ink');
   assert.strictEqual(model.getBrush('dry-ink').size, original);
   assert.strictEqual(model.setBrushOverride('dry-ink', 'inventado', 1), false);
   model.clearBrushOverride('dry-ink');
   assert.strictEqual(model.resolveBrush('dry-ink').size, original);
+  assert.strictEqual(model.resolveBrush('dry-ink').motionExpression, 0.45);
+  assert.strictEqual(model.resolveBrush('dry-ink').taperEnd,
+    model.getBrush('dry-ink').taper);
 });
 
 ok('la guía de simetría se guarda y se valida al deserializar', function () {

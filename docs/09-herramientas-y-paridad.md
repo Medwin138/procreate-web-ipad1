@@ -16,7 +16,7 @@ de escritorio, no en Safari 9.
 | Área | Estado | Nota |
 |---|---|---|
 | Biblioteca de pinceles | Implementada y probada en escritorio | 29 pinceles propios en 11 categorías + «Todos» |
-| Asistencia y corrección de trazos | Implementada y probada en escritorio | Estabilización, StreamLine, filtro de movimiento, QuickShape, curvas Bézier y corrección a petición |
+| Asistencia y corrección de trazos | Implementada y probada en escritorio | Estabilización, StreamLine, filtro de movimiento, suavizado final, QuickShape, curvas Bézier y corrección a petición |
 | ColorDrop / relleno por arrastre | Implementada y probada en escritorio | Umbral 0-100, respeta selección y bloqueo alfa |
 | Selección | Implementada y probada en escritorio | Rectángulo, elipse, lazo, automática, añadir, restar, invertir, duplicar |
 | Transformación | Implementada y probada en escritorio | Solo capa activa; mover, escalar, rotar, voltear |
@@ -52,7 +52,7 @@ proyecto.
 Comportamiento del motor actual:
 
 - Estampado por distancia con espaciado por pincel, jitter, dispersión, dureza,
-  opacidad, grano y taper de entrada.
+  opacidad, grano y afinado en ambos extremos del trazo (Taper).
 - Modulación por **velocidad** del trazo y, cuando el navegador la expone, por
   **presión** (`Touch.force`). El iPad mini 1 no aporta presión con el dedo y Safari 9
   no expone presión de lápiz de forma fiable; en ese caso se usa presión neutra 0.5.
@@ -73,6 +73,20 @@ separado de 0 a 100 en el estudio de pincel y se guardan por pincel en `localSto
   afina, con un límite del 50 % del tamaño. La opacidad también se modula ligeramente.
   Safari 9/iOS 9 no expone estos valores de forma fiable: en ese caso se usa presión
   neutra 0.5 y el trazo depende de la velocidad.
+- **Expresión del filtro de movimiento** (`motionExpression`, 0-100): solo actúa cuando
+  el Filtro de movimiento está activo. Al soltar, la reconstrucción mide la desviación
+  entre el gesto original y la curva suave, conserva su componente lenta (~24 px de
+  ventana) y la reinyecta según el porcentaje. 0 prioriza la máxima estabilidad; 100
+  recupera hasta ~40 % de la ondulación natural suprimida. El prefiltro antitemblor no
+  se debilita, así que la expresión no devuelve el temblor rápido de 6-11 px.
+- **Taper (afinado)**: se aplica al inicio y al final del trazo. `taper` y `taperEnd`
+  controlan la profundidad de cada punta; `taperLength`, la longitud de la transición;
+  `taperOpacity`, la transparencia de los extremos; `taperPressure` y `taperTouch`,
+  la modulación por presión y por velocidad/tacto; y `taperTip`, la forma de la punta
+  (redonda o afilada). Con el afinado al 100 % la punta conserva el 18 % del diámetro.
+  El trazo se reestampa al soltar aunque los filtros estén a 0, para aplicar las dos
+  puntas sin cambiar la geometría. Cada pincel hereda su afinado inicial como afinado
+  final mientras el usuario no configure otro valor.
 - **QuickShape**: mantener el dedo quieto unos 380 ms al final del trazo
   (`QUICK_HOLD_MS`) intenta ajustarlo a línea, rectángulo, cuadrado, elipse, triángulo o
   polígono regular de 4-8 lados. La forma se dibuja con el pincel activo y genera una
@@ -86,6 +100,14 @@ separado de 0 a 100 en el estudio de pincel y se guardan por pincel en `localSto
   panel restaura el original. Deshacer y rehacer funcionan tras aplicar.
 - **Vista previa en tiempo real**: los filtros, la forma y la curva se dibujan mientras
   se edita; el editor muestra anclas y manejadores en una capa de overlay.
+- **Suavizado final al soltar**: al terminar el trazo se aplica una media móvil de dos
+  pasadas sobre las muestras crudas (conserva los extremos) y se ajusta una curva
+  Catmull-Rom con epsilon adaptativo al tamaño del pincel y a la intensidad de los
+  filtros. Después se reestampa el trazo conservando presión, velocidad, calado,
+  textura y Taper. Esto elimina el temblor de alta frecuencia que los filtros en vivo no
+  alcanzan, sin imponer formas ni recortar el final. Se omite con QuickShape, difuminado,
+  trazos demasiado cortos o lienzos sin snapshot de historial. La reconstrucción usa como
+  máximo 1600 muestras para acotar el coste en el iPad.
 - Ambas ayudas se activan o desactivan por separado desde el menú de acciones y desde el
   estudio de pincel; la preferencia es global (`pcw.quickshape.v1`,
   `pcw.curverecognition.v1`).
@@ -95,6 +117,32 @@ máxima 8 %), triángulo, línea (desviación media 1,42 px), filtros sobre zigz
 (alto 86 → 25 con stabilize 90, 35 con motion 80, 32 con streamline 80), corrección a
 petición, rechazo de garabato, 9 anclas en una onda, arrastre exacto de ancla (+22, −16)
 y manejador (+18, +12), deshacer/rehacer y cancelación que restaura el trazo (1612 px).
+Con el suavizado final, un trazo sintético de temblor fuerte bajó su rugosidad media
+medida sobre píxeles de 0,62 a 0,22 (Pluma de estudio, tamaño 3). Con Dry Ink y una onda
+realista bajó de 0,095 a 0,055, el extremo final se mantuvo en y≈188,5 (crudo 188,8) y
+deshacer/rehacer devolvió exactamente el mismo número de píxeles. QuickShape mantuvo el
+rectángulo, la selección recortó el trazo suavizado y la goma suavizada se pudo deshacer.
+En Chromium de escritorio el trazo sintético de 140 muestras tardó 44 ms y el de 700,
+68 ms; falta medirlo en el iPad mini 1.
+
+Pruebas específicas de Taper y expresión (Chromium, 12 de noviembre de 2026):
+
+- Taper con tamaño 24 y filtros 40/40/30 + expresión 45: ancho 6 px en la punta inicial,
+  26 px en el cuerpo y 4-6 px en la punta final. Deshacer dejó la capa vacía (0 px) y
+  rehacer devolvió los mismos 8889 px con idéntica suma de alfa (2 107 775).
+- Solo opacidad de afinado: el ancho se mantuvo en 26 px y el alfa subió de 25 en el
+  extremo a 91 a 4 px y 255 en el cuerpo, es decir, sin encoger el trazo.
+- Expresión con Filtro de movimiento al 100: el temblor rápido mantuvo una rugosidad de
+  0,013 con expresión 0 y 0,014 con expresión 100 (crudo 0,220), mientras la ondulación
+  lenta recuperó amplitud de 1,41 a 1,50 (crudo 1,58). Con el filtro de movimiento a 0
+  la expresión no altera el trazo.
+- QuickShape de rectángulo con Taper activo: 7092 px, caja 155-424 × 175-364, tipo `rect`,
+  deshacer vació y rehacer restauró exactamente los mismos píxeles.
+- Editor de curva sobre un trazo suavizado y afinado: 7 anclas, cancelar restauró los
+  4908 px originales, aplicar generó 5108 px y deshacer/rehacer funcionó.
+- El estudio de pincel expone 22 controles, incluidos los siete de Taper y «Expresión del
+  filtro»; mover el control actualiza el pincel resuelto (`taperTip` 0,8; `motionExpression`
+  0,7).
 
 ## 4. ColorDrop y relleno
 
@@ -192,8 +240,11 @@ fondo cambió a `#f2f2f2` y el nombre se conservó.
 | Función de 3.1 | Esta adaptación | Diferencia |
 |---|---|---|
 | 11 categorías de pinceles | Sí, con 29 pinceles propios | No son los 128 originales ni sus recursos |
-| Grosor por velocidad y presión | Sí (taper, velocidad y presión si el navegador la expone) | Sin presión real en Safari 9/iPad mini 1 |
+| Grosor por velocidad y presión | Sí (velocidad y presión si el navegador la expone) | Sin presión real en Safari 9/iPad mini 1 |
 | Estabilización, StreamLine y filtro de movimiento | Sí, tres filtros independientes | Valores propios, sin calibrar contra la app |
+| Motion Filtering Expression | Sí, recupera la desviación lenta del gesto filtrado | Solo actúa con el filtro de movimiento; efecto propio y moderado |
+| Taper (inicio y final) | Sí: profundidad, longitud, opacidad, presión, tacto y forma de punta | Siete controles propios; sin calibrar contra la app |
+| Suavizado final al soltar | Sí, reconstrucción sobre curva propia | Omega de filtros, tamaño y límite de muestras propios; pendiente de validar en iPad |
 | QuickShape (líneas, rectángulos, elipses, triángulos, polígonos) | Sí, por pausa al final del trazo | Umbrales propios; no incluye todas las figuras de la app |
 | Corrección de forma a petición | Sí, sobre el último trazo | Solo formas geométricas reconocibles |
 | Edición de curvas Bézier | Sí, anclas y manejadores | Curva Catmull-Rom propia, máximo 24 anclas |
