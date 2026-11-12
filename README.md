@@ -1,5 +1,7 @@
 # Procreate Web Adaptation — iPad mini 1 (A1432, iOS 9.3.5)
 
+**Demo publicada:** https://medwin138.github.io/procreate-web-ipad1/
+
 Adaptación web de Procreate orientada a conservar el flujo de trabajo, la organización
 de la interfaz y el comportamiento de las herramientas de la aplicación original,
 ejecutable en Safari 9.3.5 sobre iPad mini 1 (A5, 512 MB RAM, 1024 × 768).
