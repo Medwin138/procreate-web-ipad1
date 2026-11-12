@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="format-detection" content="telephone=no">
+<title>Procreate Web — Shell</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ============================ GALERÍA ============================ -->
+<section id="screen-gallery" class="screen">
+  <header class="gallery-header">
+    <div class="gallery-title">
+      <span class="brand">Galería</span>
+      <span id="gallery-count" class="subtle"></span>
+    </div>
+    <div class="gallery-actions">
+      <button id="btn-diag" class="text-btn" type="button">Diagnóstico</button>
+      <button id="btn-new-project" class="icon-btn primary" type="button" aria-label="Nuevo lienzo">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="gallery-storage-note" class="storage-note is-hidden"></div>
+
+  <div class="gallery-body">
+    <div id="gallery-empty" class="gallery-empty is-hidden">
+      <div class="empty-mark">
+        <svg class="ico big" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/></svg>
+      </div>
+      <h2>Sin lienzos todavía</h2>
+      <p>Crea un lienzo para empezar. Los proyectos se guardan en este dispositivo.</p>
+      <button id="btn-new-project-2" class="text-btn strong" type="button">Crear lienzo</button>
+    </div>
+    <div id="gallery-grid" class="gallery-grid"></div>
+  </div>
+</section>
+
+<!-- ============================ ESTUDIO ============================ -->
+<section id="screen-studio" class="screen is-hidden">
+  <header id="topbar" class="topbar">
+    <div class="topbar-group">
+      <button id="btn-gallery" class="icon-btn" type="button" aria-label="Volver a la galería" title="Galería">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/></svg>
+      </button>
+      <button id="btn-undo" class="icon-btn is-disabled" type="button" aria-label="Deshacer" title="Deshacer">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h9a5 5 0 0 1 0 10h-3"/></svg>
+      </button>
+      <button id="btn-redo" class="icon-btn is-disabled" type="button" aria-label="Rehacer" title="Rehacer">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M15 7l5 5-5 5"/><path d="M20 12h-9a5 5 0 0 0 0 10h3"/></svg>
+      </button>
+      <button id="btn-actions" class="icon-btn" type="button" aria-label="Acciones" title="Acciones">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M14.7 6.3a3.5 3.5 0 0 0 4.6 4.6l-8.2 8.2a2.4 2.4 0 0 1-3.4-3.4z"/><path d="M6.5 17.5h.01"/></svg>
+      </button>
+      <button id="btn-adjustments" class="icon-btn" type="button" aria-label="Ajustes" title="Ajustes">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M5 19L19 5"/><path d="M15 5h4v4"/><path d="M5 5l3 3M6.5 15.5l2 2"/></svg>
+      </button>
+      <button id="btn-selection" class="icon-btn" type="button" aria-label="Selección" title="Selección">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>
+      </button>
+      <button id="btn-transform" class="icon-btn" type="button" aria-label="Transformar" title="Transformar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 9V5h4M20 15v4h-4M20 9V5h-4M4 15v4h4"/><path d="M8 8l8 8M16 8l-8 8"/></svg>
+      </button>
+      <button id="btn-quick" class="icon-btn" type="button" aria-label="Quick Menu" title="Quick Menu">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+
+    <div class="topbar-tools">
+      <button id="btn-brush" class="tool-btn is-active" type="button" title="Pincel">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L9 19l-5 1 1-5z"/><path d="M13.5 6.5l4 4"/></svg>
+      </button>
+      <button id="btn-smudge" class="tool-btn" type="button" title="Difuminar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3c3.5 4.2 5.5 7 5.5 9.6A5.5 5.5 0 0 1 12 18a5.5 5.5 0 0 1-5.5-5.4C6.5 10 8.5 7.2 12 3z"/><path d="M9.5 14.5a2.8 2.8 0 0 0 2.8 2.3"/></svg>
+      </button>
+      <button id="btn-eraser" class="tool-btn" type="button" title="Borrador">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M8 20H5l-2-2 9-9 6 6-5 5z"/><path d="M12 9l6 6"/></svg>
+      </button>
+    </div>
+
+    <div class="topbar-group right">
+      <div class="metric"><span class="metric-label">Tam</span><span id="size-value" class="metric-value">24</span></div>
+      <div class="metric"><span class="metric-label">Op</span><span id="opacity-value" class="metric-value">85</span></div>
+      <button id="btn-layers" class="icon-btn" type="button" aria-label="Capas" title="Capas">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 16l9 5 9-5"/></svg>
+      </button>
+      <button id="btn-color" class="color-chip" type="button" aria-label="Color" title="Color">
+        <span id="color-chip-fill"></span>
+      </button>
+    </div>
+  </header>
+
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-top">
+      <div class="brush-preview"><span id="brush-preview-dot"></span></div>
+    </div>
+    <div class="vslider-wrap">
+      <div class="vslider-label">Tamaño</div>
+      <div id="size-slider" class="vslider" data-min="1" data-max="400" data-value="24"></div>
+    </div>
+    <div class="vslider-wrap">
+      <div class="vslider-label">Opacidad</div>
+      <div id="opacity-slider" class="vslider" data-min="1" data-max="100" data-value="85"></div>
+    </div>
+    <div class="sidebar-bottom">
+      <button id="btn-modify" class="round-btn" type="button" title="Modify (cuentagotas)">M</button>
+    </div>
+  </aside>
+
+  <div id="stage" class="stage">
+    <canvas id="view-canvas"></canvas>
+    <div id="stage-badge" class="stage-badge"></div>
+    <div class="stage-controls">
+      <button id="btn-fit" class="mini-btn" type="button" title="Ajustar a pantalla">Ajustar</button>
+      <button id="btn-reset-view" class="mini-btn" type="button" title="Restablecer rotación">0°</button>
+    </div>
+  </div>
+
+  <!-- Panel de capas -->
+  <aside id="panel-layers" class="panel is-hidden">
+    <div class="panel-head">
+      <span>Capas</span>
+      <button class="icon-btn small panel-close" type="button" data-close="panel-layers" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="layer-controls">
+      <label class="row-label">Mezcla
+        <select id="layer-blend" class="select">
+          <option value="source-over">Normal</option>
+          <option value="multiply">Multiplicar</option>
+          <option value="screen">Trama</option>
+          <option value="overlay">Superponer</option>
+          <option value="darken">Oscurecer</option>
+          <option value="lighten">Aclarar</option>
+          <option value="color-dodge">Sobreexponer color</option>
+          <option value="color-burn">Subexponer color</option>
+          <option value="hard-light">Luz fuerte</option>
+          <option value="soft-light">Luz suave</option>
+          <option value="difference">Diferencia</option>
+          <option value="exclusion">Exclusión</option>
+          <option value="hue">Tono</option>
+          <option value="saturation">Saturación</option>
+          <option value="color">Color</option>
+          <option value="luminosity">Luminosidad</option>
+        </select>
+      </label>
+      <label class="row-label">Opacidad <span id="layer-opacity-value">100%</span>
+        <input id="layer-opacity" class="range" type="range" min="0" max="100" value="100">
+      </label>
+      <button id="btn-alpha-lock" class="text-btn wide" type="button">Bloqueo alfa: desactivado</button>
+    </div>
+    <div id="layers-list" class="layers-list"></div>
+    <div class="panel-foot">
+      <button id="btn-layer-add" class="icon-btn" type="button" title="Nueva capa">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button id="btn-layer-dup" class="icon-btn" type="button" title="Duplicar capa">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+      </button>
+      <button id="btn-layer-up" class="icon-btn" type="button" title="Subir capa">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+      </button>
+      <button id="btn-layer-down" class="icon-btn" type="button" title="Bajar capa">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+      </button>
+      <button id="btn-layer-del" class="icon-btn danger" type="button" title="Eliminar capa">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M7 7l1 12h8l1-12"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Panel de color -->
+  <aside id="panel-color" class="panel is-hidden">
+    <div class="panel-head">
+      <span>Color</span>
+      <button class="icon-btn small panel-close" type="button" data-close="panel-color" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="color-wrap">
+      <canvas id="color-wheel" width="260" height="260"></canvas>
+    </div>
+    <div class="color-readout">
+      <span id="color-swatch" class="swatch big-swatch"></span>
+      <input id="color-hex" class="hex-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="#1C1C1E">
+    </div>
+    <div class="panel-subhead">Recientes</div>
+    <div id="recent-colors" class="swatches"></div>
+    <div class="panel-subhead">Paleta base</div>
+    <div id="base-palette" class="swatches"></div>
+    <div class="color-drop-box">
+      <label class="row-label">Umbral ColorDrop <span id="drop-threshold-value">12</span>
+        <input id="drop-threshold" class="range" type="range" min="0" max="100" value="12">
+      </label>
+      <p class="form-note">Arrastra el círculo de color hasta una zona cerrada del lienzo y suéltalo para rellenar. El umbral controla cuánto se extiende.</p>
+    </div>
+  </aside>
+
+  <!-- Biblioteca de pinceles -->
+  <div id="panel-brushes" class="overlay-panel is-hidden">
+    <div class="panel-head wide">
+      <span>Biblioteca de pinceles</span>
+      <button class="icon-btn small panel-close" type="button" data-close="panel-brushes" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="brush-layout">
+      <div id="brush-sets" class="brush-sets"></div>
+      <div id="brush-grid" class="brush-grid"></div>
+    </div>
+    <p class="overlay-note">Pinceles propios de esta adaptación. No se usan recursos de Procreate. El motor de la Fase 3 sustituirá la vista previa provisional.</p>
+  </div>
+
+  <!-- Acciones -->
+  <div id="popover-actions" class="popover is-hidden">
+    <div class="popover-title">Acciones</div>
+    <button class="menu-item" type="button" data-action="flip">Voltear lienzo</button>
+    <button class="menu-item" type="button" data-action="rotate">Rotar 90°</button>
+    <button class="menu-item" type="button" data-action="fit">Ajustar a pantalla</button>
+    <label class="menu-item" for="file-image">Insertar imagen</label>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-action="fill-layer">Rellenar capa</button>
+    <button class="menu-item" type="button" data-action="fill-selection">Rellenar selección</button>
+    <button class="menu-item" type="button" data-action="clear-layer">Vaciar capa</button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-action="export-png">Compartir PNG</button>
+    <button class="menu-item" type="button" data-action="export-jpeg">Compartir JPEG</button>
+    <button class="menu-item" type="button" data-action="export-project">Exportar proyecto (.pcw)</button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-action="canvas-settings">Configuración del lienzo</button>
+    <button class="menu-item" type="button" data-action="diag">Diagnóstico del dispositivo</button>
+    <div class="menu-note">ColorDrop: mantén y arrastra el círculo de color al lienzo.</div>
+  </div>
+
+  <!-- Ajustes -->
+  <div id="panel-adjustments" class="overlay-panel is-hidden">
+    <div class="panel-head wide">
+      <span>Ajustes</span>
+      <button class="icon-btn small panel-close" type="button" data-close="panel-adjustments" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="adjust-body">
+      <label class="row-label">Brillo <span id="adj-brightness-value">0</span>
+        <input id="adj-brightness" class="range" type="range" min="-100" max="100" value="0">
+      </label>
+      <label class="row-label">Contraste <span id="adj-contrast-value">0</span>
+        <input id="adj-contrast" class="range" type="range" min="-100" max="100" value="0">
+      </label>
+      <label class="row-label">Saturación <span id="adj-saturation-value">0</span>
+        <input id="adj-saturation" class="range" type="range" min="-100" max="100" value="0">
+      </label>
+      <label class="row-label">Desenfoque <span id="adj-blur-value">0</span>
+        <input id="adj-blur" class="range" type="range" min="0" max="20" value="0">
+      </label>
+      <label class="row-label">Ruido <span id="adj-noise-value">0</span>
+        <input id="adj-noise" class="range" type="range" min="0" max="100" value="0">
+      </label>
+      <div class="panel-subhead">Filtros rápidos</div>
+      <div class="adjust-presets">
+        <button class="text-btn" type="button" data-adjust-preset="bw">Blanco y negro</button>
+        <button class="text-btn" type="button" data-adjust-preset="invert">Invertir</button>
+        <button class="text-btn" type="button" data-adjust-preset="reset">Restablecer</button>
+      </div>
+      <p class="overlay-note">Vista previa sobre la capa activa. «Aplicar» la convierte en píxeles; «Cancelar» no modifica nada.</p>
+    </div>
+    <div class="panel-foot right">
+      <button id="btn-adjust-cancel" class="text-btn" type="button">Cancelar</button>
+      <button id="btn-adjust-apply" class="text-btn strong" type="button">Aplicar</button>
+    </div>
+  </div>
+
+  <!-- Selección -->
+  <div id="panel-selection" class="popover is-hidden">
+    <div class="popover-title">Selección</div>
+    <button class="menu-item select-mode" type="button" data-select="rect">Rectángulo</button>
+    <button class="menu-item select-mode" type="button" data-select="ellipse">Elipse</button>
+    <button class="menu-item select-mode" type="button" data-select="lasso">Lazo</button>
+    <button class="menu-item select-mode" type="button" data-select="auto">Automática</button>
+    <div class="menu-sep"></div>
+    <button class="menu-item select-op is-active" type="button" data-select-op="new">Nueva selección</button>
+    <button class="menu-item select-op" type="button" data-select-op="add">Añadir a la selección</button>
+    <button class="menu-item select-op" type="button" data-select-op="subtract">Restar de la selección</button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-selection-action="invert">Invertir selección</button>
+    <button class="menu-item" type="button" data-selection-action="duplicate">Duplicar a capa</button>
+    <button class="menu-item" type="button" data-selection-action="clear">Deseleccionar</button>
+    <div class="menu-note">Rectángulo, elipse y lazo se dibujan en el lienzo. Automática toca una zona de color. Añadir y Restar combinan con la selección activa.</div>
+  </div>
+
+  <!-- Transformar -->
+  <div id="panel-transform" class="popover is-hidden">
+    <div class="popover-title">Transformar</div>
+    <div class="menu-note" style="margin-top:0">Arrastra dentro del recuadro para mover. Usa las esquinas para escalar y el tirador superior para rotar.</div>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-transform-action="flip-h">Voltear horizontal</button>
+    <button class="menu-item" type="button" data-transform-action="flip-v">Voltear vertical</button>
+    <button class="menu-item" type="button" data-transform-action="reset">Restablecer</button>
+    <div class="menu-sep"></div>
+    <button class="menu-item" type="button" data-transform-action="cancel">Cancelar</button>
+    <button class="menu-item strong-item" type="button" data-transform-action="apply">Aplicar</button>
+  </div>
+
+  <div id="color-drop-indicator" class="color-drop-indicator is-hidden">
+    <span id="color-drop-dot" class="color-drop-dot"></span>
+    <span id="color-drop-text">Suelta para rellenar</span>
+  </div>
+
+  <!-- Quick Menu -->
+  <div id="quick-menu" class="quick-menu is-hidden">
+    <div class="quick-title">Quick Menu</div>
+    <div class="quick-grid">
+      <button class="quick-item" type="button" data-quick="brushes">Pinceles</button>
+      <button class="quick-item" type="button" data-quick="layers">Capas</button>
+      <button class="quick-item" type="button" data-quick="color">Color</button>
+      <button class="quick-item is-disabled" type="button" data-quick="undo">Deshacer</button>
+      <button class="quick-item is-disabled" type="button" data-quick="redo">Rehacer</button>
+      <button class="quick-item" type="button" data-quick="flip">Voltear</button>
+      <button class="quick-item" type="button" data-quick="fit">Ajustar</button>
+      <button class="quick-item" type="button" data-quick="gallery">Galería</button>
+    </div>
+  </div>
+
+  <input id="file-image" class="file-input-hidden" type="file" accept="image/*">
+
+  <div id="save-indicator" class="save-indicator is-hidden">Guardando…</div>
+</section>
+
+<!-- ============================ DIAGNÓSTICO ============================ -->
+<section id="screen-diag" class="screen is-hidden">
+  <header class="gallery-header">
+    <div class="gallery-title"><span class="brand">Diagnóstico</span></div>
+    <div class="gallery-actions">
+      <button id="btn-diag-back" class="text-btn" type="button">Volver</button>
+    </div>
+  </header>
+  <div class="diag-body">
+    <div class="diag-actions">
+      <button id="diag-run" class="text-btn strong" type="button">Ejecutar pruebas</button>
+      <button id="diag-touch" class="text-btn" type="button">Medir entrada táctil (3 s)</button>
+      <button id="diag-save" class="text-btn" type="button">Guardar informe</button>
+      <label class="diag-check"><input id="diag-aggressive" type="checkbox"> Prueba agresiva de canvas (puede cerrar la pestaña)</label>
+    </div>
+    <pre id="diag-log" class="diag-log"></pre>
+  </div>
+</section>
+
+<!-- ============================ MODALES ============================ -->
+<div id="modal-root" class="modal-root is-hidden">
+  <div class="modal-scrim"></div>
+  <div id="modal-card" class="modal-card">
+    <div class="modal-head">
+      <span id="modal-title">Título</span>
+      <button id="modal-close" class="icon-btn small" type="button" aria-label="Cerrar">
+        <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div id="modal-body" class="modal-body"></div>
+    <div id="modal-foot" class="modal-foot"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast is-hidden"></div>
+
+<script src="dist/app.js"></script>
+</body>
+</html>

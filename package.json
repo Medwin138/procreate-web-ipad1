@@ -1,0 +1,14 @@
+{
+  "name": "procreate-web-shell",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Adaptación web de Procreate para iPad mini 1 (iOS 9.3.5 / Safari 9). Fase 2: shell funcional.",
+  "scripts": {
+    "build": "node tools/build.js",
+    "serve": "node tools/server.js",
+    "start": "node tools/server.js",
+    "test": "node tests/model.test.js",
+    "check": "node tools/build.js && node tests/model.test.js && node tools/check-ids.js"
+  },
+  "license": "UNLICENSED"
+}
