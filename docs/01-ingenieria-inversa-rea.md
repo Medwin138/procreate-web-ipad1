@@ -35,8 +35,8 @@ También se comprobó el entorno local:
 - `frida`, `frida-ps`, `ideviceinfo`, `rizin`, `ida64`, `ghidraRun`: **no instalados**.
 - `python`, `node`, `java`, `npx`: instalados.
 - No hay directorio de copias de seguridad de iTunes (`MobileSync\Backup`).
-- Búsqueda recursiva en `C:\Users\Usuario` de `*.ipa`, `*.app`, `*.brushset`, `*.brush`: **sin resultados**.
-- `C:\Users\Usuario\Documents\Proyectos\Procreate-Web`: existía vacío.
+- Búsqueda recursiva en el perfil de usuario de `*.ipa`, `*.app`, `*.brushset`, `*.brush`: **sin resultados**.
+- La carpeta del proyecto existía vacía al iniciar la Fase 1.
 
 **Conclusión:** REA está operativo, pero no existe objetivo que analizar y varias rutas de
 análisis propias de iOS/macOS no están disponibles en Windows.

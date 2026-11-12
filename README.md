@@ -82,6 +82,29 @@ El proyecto está versionado con Git en la rama `master`. `dist/app.js` se versi
 porque es el archivo que sirve el navegador del iPad; se regenera con `npm run check`
 y no debe editarse a mano.
 
+## Publicación en GitHub Pages
+
+La web es estática y se publica desde la raíz de `master` en GitHub Pages. El flujo es:
+
+```bash
+npm run check
+git add -A
+git commit -m "Actualiza la build"
+git push origin master
+```
+
+GitHub Pages reconstruye el sitio solo. No hay backend: cada navegador guarda sus
+proyectos en IndexedDB/WebSQL bajo el origen publicado, separados de los de
+`localhost:8090`.
+
+## Aviso legal
+
+Proyecto independiente de estudio y compatibilidad. **No está afiliado, patrocinado ni
+respaldado por Savage Interactive Pty Ltd.** «Procreate» es una marca de su titular y se
+menciona solo para describir la referencia funcional. No se copian código, recursos,
+pinceles ni parámetros propietarios: la interfaz y los pinceles son aproximaciones
+propias y no se distribuye ningún binario de la app original.
+
 ## Siguiente paso
 
 1. Ejecutar la lista de validación en el iPad mini 1 real
